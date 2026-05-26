@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/MCP-1.6%2B-green)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-24%20passed-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-27%20passed-brightgreen)](#testing)
 
 ---
 
@@ -18,6 +18,8 @@ AI assistants forget everything between sessions. **AI Memory MCP** solves that 
 - 🔄 **Restore context** at the start of each session with one tool call
 - 📊 **Generate weekly reports** from completed tasks automatically
 - 🏷️ **Multi-project / multi-branch** support out of the box
+- 🤖 **Smart fallback** — search auto-degrades: FTS5 → vector → LIKE
+- ✅ **Quality guardrails** — save validates completeness, warns about missing fields
 
 Works with **Claude Desktop**, **Cursor**, **VS Code**, **Windsurf**, and any MCP-compatible client.
 
@@ -134,6 +136,8 @@ Load my memory for project "my-project"
 
 The AI will call `init_session` and restore your previous context automatically.
 
+> **For weaker models (Qwen/Doubao/Kimi etc.):** Tool descriptions now include explicit call-timing guidance (when to call, what to check before/after). The `search_summaries` tool auto-falls back from FTS5 → vector → LIKE, so one-call search works for both English error messages and Chinese queries without flag toggling. `save_summary` returns non-blocking `quality_warnings` when required fields are missing.
+
 ---
 
 ## Features
@@ -141,7 +145,7 @@ The AI will call `init_session` and restore your previous context automatically.
 | Feature | Details |
 |---|---|
 | **Storage** | SQLite — zero external services, single file |
-| **Full-text search** | SQLite FTS5 — fast, no extra deps |
+| **Full-text search** | SQLite FTS5 — fast, no extra deps (auto-fallback to vector/LIKE) |
 | **Semantic search** | ChromaDB + `all-MiniLM-L6-v2` (optional) |
 | **Multi-project** | Filter by `project_name` + `branch_name` |
 | **Task lifecycle** | `pending → in_progress → completed / blocked / abandoned` |
@@ -180,14 +184,14 @@ The AI will call `init_session` and restore your previous context automatically.
 
 | Tool | Description |
 |---|---|
-| `save_summary` | Persist a new session summary |
+| `save_summary` | Persist a new session summary (with quality validation) |
 | `update_summary` | Update status / content |
 | `add_decision` | Record a key technical decision |
-| `search_summaries` | Keyword / FTS5 / vector search |
+| `search_summaries` | Keyword / FTS5 / vector search (auto fallback chain) |
 | `search_summaries_fts` | Dedicated FTS5 full-text search |
 | `get_summary_by_id` | Exact lookup by session ID |
 | `list_recent_sessions` | List latest sessions |
-| `init_session` | Restore context at session start |
+| `init_session` | **Must-call first** — restore context at session start |
 | `weekly_review` | Generate Markdown weekly report |
 | `maintenance` | Rebuild index, VACUUM, persist vectors |
 
@@ -293,14 +297,14 @@ ai-memory-mcp/
 ## Testing
 
 ```
-24 passed in 7s
+27 passed in 6s
 ```
 
 ```bash
 pytest tests/unit/test_mcp_server.py -v
 ```
 
-All 24 unit tests cover: save/update/search/FTS/vector/decisions/maintenance/init/review/schema.
+All 27 tests cover: save/update/search/FTS/vector/decisions/maintenance/init/review/schema.
 
 ---
 

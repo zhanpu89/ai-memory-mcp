@@ -2,6 +2,7 @@
 
 > Complete schema reference for all 10 MCP tools exposed by `ai-memory-mcp`.
 > Tool names follow the `ai_memory_<action>_<resource>` convention.
+> Each tool's MCP description now includes **when-to-call, before-call and after-call guidance** — weaker models (Qwen/Doubao/Kimi) can follow these descriptions without reading external reference files.
 
 ---
 
@@ -46,6 +47,8 @@ On error, only `success` and `message` are returned:
 { "success": false, "message": "session_id 'x' 已存在，如需更新请使用 update_summary" }
 ```
 
+> **New:** `save_summary` may also return `quality_warnings` — non-blocking hints about missing optional fields (file_paths, tags, next_steps, decisions) that improve future retrievability.
+
 ---
 
 ## Session Summary Object
@@ -80,6 +83,10 @@ All read tools return one or more **Session Summary** objects:
 ### `save_summary`
 
 Persist a **new** session summary. Fails if `session_id` already exists — use [`update_summary`](#update_summary) to modify.
+
+> **When to call:** Task complete, bug fix, refactor done, milestone reached, or session ending.
+> **Before calling:** Ensure file_paths, next_steps, tags are filled. **Confirm with the user first.**
+> **After calling:** Optionally call `add_decision` to document key technical choices.
 
 **Annotations:** `readOnlyHint=false` · `destructiveHint=false` · `idempotentHint=false`
 
@@ -116,14 +123,19 @@ Persist a **new** session summary. Fails if `session_id` already exists — use 
 #### Response
 
 ```json
-{ "success": true, "message": "摘要保存成功" }
+{ "success": true, "message": "摘要保存成功", "quality_warnings": ["缺少 file_paths..."] }
 ```
+
+> `quality_warnings` is an optional array field. It does not block the save, but guides the model to fill in missing info for better retrievability.
 
 ---
 
 ### `update_summary`
 
 Update the **status** and/or **content** of an existing summary. At least one of `new_status` or `updated_content` must be supplied. Also syncs the FTS5 index when content changes.
+
+> **When to call:** Task status changes (e.g. `in_progress → completed`), or summary content needs amending.
+> **Before calling:** Ensure `session_id` already exists (created via `save_summary`).
 
 **Annotations:** `readOnlyHint=false` · `destructiveHint=false` · `idempotentHint=true`
 
@@ -152,6 +164,9 @@ Update the **status** and/or **content** of an existing summary. At least one of
 ### `add_decision`
 
 Attach a **key technical decision** to an existing session.
+
+> **When to call:** Immediately when a decision is made — tech choice, architecture design, bug root-cause, performance optimization, security decision.
+> **Suggested `decision_type` values:** `architecture`, `tech_choice`, `bug_fix`, `refactor`, `performance`, `security`, `trade_off`.
 
 **Annotations:** `readOnlyHint=false` · `destructiveHint=false` · `idempotentHint=false`
 
@@ -187,6 +202,8 @@ Attach a **key technical decision** to an existing session.
 
 Rebuild the FTS5 full-text index, run `VACUUM` to reclaim disk space, and persist the vector store. Call periodically (e.g. weekly) or after bulk imports.
 
+> **When to call:** Weekly, after bulk import/delete, or on user request.
+
 **Annotations:** `readOnlyHint=false` · `destructiveHint=false` · `idempotentHint=true`
 
 #### Parameters
@@ -203,7 +220,10 @@ _None_
 
 ### `search_summaries`
 
-Flexible multi-mode search. Supports plain keyword, FTS5 full-text, and semantic vector search — controlled via `use_fts` and `use_vector` flags.
+Flexible multi-mode search with **auto-fallback chain**. Default mode is FTS5 (fast, exact match). If FTS5 returns 0 results, automatically degrades to vector semantic search (if available), then to LIKE fuzzy match.
+
+> **When to call:** Error/exception encountered, need to reference past work, user mentions "previously", discussing tool/library usage.
+> **Calling tips:** Just pass `query` — the tool handles search strategy selection. No need to toggle `use_fts`/`use_vector` manually.
 
 **Annotations:** `readOnlyHint=true` · `idempotentHint=true`
 
@@ -217,18 +237,18 @@ Flexible multi-mode search. Supports plain keyword, FTS5 full-text, and semantic
 | `status` | `string` | — | Status filter (exact match) |
 | `project_name` | `string` | — | Project filter (exact match) |
 | `branch_name` | `string` | — | Branch filter (exact match) |
-| `use_fts` | `boolean` | — | Use FTS5 full-text index (requires `query`). Default: `false` |
-| `use_vector` | `boolean` | — | Use semantic vector search (requires `query` + vector deps). Default: `false` |
+| `use_fts` | `boolean` | — | Use FTS5 full-text index. **Default: `true`** |
+| `use_vector` | `boolean` | — | Use semantic vector search (requires vector deps). Default: `false` |
 | `limit` | `integer` | — | Max results. Default: `10` |
 
 #### Search Mode Decision Guide
 
-| Goal | Recommended flags |
+| Goal | Recommended approach |
 |---|---|
-| Find by exact keyword | `use_fts=true` |
-| Find semantically similar content | `use_vector=true` |
-| Filter by project/branch/status | all flags `false`, use filter params |
-| Combined filter + keyword | `use_fts=false`, set `query` + filter params |
+| Search anything (recommended) | Just pass `query` — auto fallback handles the rest |
+| Exact error message / package name | Pass `query` (FTS5 default will match precisely) |
+| Semantic similarity | Set `use_vector=true` for targeted semantic search |
+| Filter-only (no keyword) | Set filter params only, leave `query` unset |
 
 #### Response
 
@@ -245,6 +265,8 @@ Flexible multi-mode search. Supports plain keyword, FTS5 full-text, and semantic
 ### `search_summaries_fts`
 
 Dedicated FTS5 full-text search. Supports SQLite FTS5 query syntax (e.g. `"jwt" OR "oauth"`, `auth*`).
+
+> **When to call:** Need precise FTS5 query syntax (AND/OR/NOT), or `search_summaries` default FTS5 is not enough.
 
 **Annotations:** `readOnlyHint=true` · `idempotentHint=true`
 
@@ -270,6 +292,8 @@ Dedicated FTS5 full-text search. Supports SQLite FTS5 query syntax (e.g. `"jwt" 
 
 Exact lookup of a single session by its `session_id`.
 
+> **When to call:** After `init_session` or `search_summaries` returns a relevant record; use this to get full context.
+
 **Annotations:** `readOnlyHint=true` · `idempotentHint=true`
 
 #### Parameters
@@ -294,6 +318,8 @@ Exact lookup of a single session by its `session_id`.
 
 Return sessions ordered by `created_at DESC`, with optional project/branch filters.
 
+> **When to call:** User wants to review recent work, or browse recent tasks to pick which to continue.
+
 **Annotations:** `readOnlyHint=true` · `idempotentHint=true`
 
 #### Parameters
@@ -308,7 +334,11 @@ Return sessions ordered by `created_at DESC`, with optional project/branch filte
 
 ### `init_session`
 
-**Call at the start of every AI session.** Returns up to 3 `in_progress` tasks created within the last 3 days, plus a `prompt` string ready to paste into the conversation to restore context.
+**Must-call-first tool at the start of every AI session.** Returns up to 3 `in_progress` tasks created within the last 3 days, plus a `prompt` string ready to paste into the conversation to restore context.
+
+> **When to call:** Every new conversation, **before answering any coding question**. Also on project switch, or when user says "load memory / continue / restore".
+> **Before calling:** First detect project context — find `.project_name` for `project_name`, read `.git/HEAD` for `branch_name`.
+> **After calling:** Show results to user. If user picks a task, call `get_summary_by_id` for full context. For new tasks, generate session_id as `session-YYYYMMDD-task_slug`.
 
 **Annotations:** `readOnlyHint=true` · `idempotentHint=true`
 
@@ -338,6 +368,8 @@ Return sessions ordered by `created_at DESC`, with optional project/branch filte
 
 Generate a **Markdown weekly report** for the current calendar week, covering completed tasks, key decisions, risks, and next steps.
 
+> **When to call:** User says "generate weekly report / weekly summary".
+
 **Annotations:** `readOnlyHint=true` · `idempotentHint=true`
 
 #### Parameters
@@ -364,22 +396,30 @@ Generate a **Markdown weekly report** for the current calendar week, covering co
 ## Recommended Workflow for AI Agents
 
 ```
-Session Start
-  └─► init_session(project_name="my-project")
-        → receive task list + prompt, inject into context
+Session Start (MANDATORY — before ANY coding answer)
+  1. Detect project context → get project_name, branch_name
+  2. └─► init_session(project_name, branch_name)         ← FIRST tool call
+  3. Show task list to user, ask which to continue
 
-During Work
-  ├─► save_summary(session_id, task_title, summary_content, status="in_progress", ...)
+During Work (record decisions immediately)
   └─► add_decision(session_id, decision_type, description, reasoning)
 
-Task Complete
-  └─► update_summary(session_id, new_status="completed")
+Milestone / Task Complete (ask user before saving)
+  └─► save_summary(session_id, task_title, summary, status="completed", ...)
+       ↳ Quality check runs server-side; missing fields trigger warnings
 
-Search Past Work
-  ├─► search_summaries(query="...", use_vector=True)   ← semantic
-  ├─► search_summaries_fts(query="jwt auth")           ← keyword
-  └─► search_summaries(project_name="x", status="in_progress")  ← filter
+Search Past Work (auto fallback handles strategy)
+  └─► search_summaries(query="error message or description")
+       ↳ FTS5 → vector → LIKE (no flag toggling needed)
+
+Status Change
+  └─► update_summary(session_id, new_status="completed")
 
 Weekly
   └─► weekly_review(project_name="my-project")
 ```
+
+> **Key changes for easier model adoption:**
+> - `search_summaries` now defaults to FTS5 and auto-falls back through vector to LIKE — one call covers all scenarios
+> - `save_summary` returns `quality_warnings` to guide the model without blocking
+> - All tool descriptions embed when-to-call / before / after guidance — no external reference files needed for basic usage
