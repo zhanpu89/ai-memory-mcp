@@ -28,10 +28,20 @@ curl http://localhost:8000/mcp
 
 The Docker image is kept **lightweight** (~200 MB) by:
 
-1. **Multi-stage build** — build artifacts discarded in final image
+1. **3-stage build** — `builder` (wheel packaging) → `deps` (heavy pip installs, cached) → `runtime` (app code only)
 2. **No embedded models** — model cache (~500 MB) mounted as external volume
 3. **Optional vector search** — ChromaDB + sentence-transformers only installed via `INSTALL_VECTOR=true`
 4. **Chinese mirror acceleration** — pip uses Tsinghua mirror, HuggingFace uses hf-mirror.com
+
+### Incremental Build Performance
+
+The `deps` stage is cached independently. Only source code changes bust the `runtime` stage:
+
+| Change type | `builder` | `deps` (cached) | `runtime` | Rebuild time |
+|---|---|---|---|---|
+| Edit `src/` code | rebuilt | **cache hit** | rebuilt | **~10 seconds** |
+| Add/change dependency | rebuilt | rebuilt | rebuilt | 30+ minutes |
+| Nothing | cache hit | cache hit | cache hit | seconds |
 
 ### Volume Strategy
 

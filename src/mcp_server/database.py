@@ -208,7 +208,7 @@ def db_save_summary(
             cursor = conn.cursor()
             cursor.execute('SELECT 1 FROM session_summaries WHERE session_id = ?', (session_id,))
             if cursor.fetchone():
-                return error_response(f"session_id '{session_id}' 已存在，如需更新请使用 update_summary")
+                return error_response(f"session_id '{session_id}' 已存在，如需更新请使用 update_summary"), None
 
             cursor.execute('''
             INSERT INTO session_summaries

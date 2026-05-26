@@ -114,6 +114,10 @@ class VectorStore:
     # ── private helpers ───────────────────────────────────────────────────────
 
     def _init(self, db_path: str, model_cache_dir: str) -> None:
+        # 设置 AI_MEMORY_DISABLE_VECTOR=1 可在测试或受限环境中跳过向量初始化
+        if os.environ.get("AI_MEMORY_DISABLE_VECTOR") == "1":
+            logger.info("向量初始化已被 AI_MEMORY_DISABLE_VECTOR 禁用")
+            return
         try:
             vector_db_path = os.path.join(os.path.dirname(os.path.abspath(db_path)), VECTOR_DB_DIR_NAME)
             os.makedirs(vector_db_path, exist_ok=True)
