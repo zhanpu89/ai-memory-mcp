@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-memory-mcp"
+version = "1.1.0"
+description = "Persistent AI session memory via MCP — stores, searches and retrieves conversation summaries with SQLite + optional vector search"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    {name = "AI Memory Team"}
+]
+keywords = ["mcp", "ai", "memory", "embedding", "vector-search", "sqlite", "llm", "agent", "session", "fastmcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Environment :: Console",
+]
+
+# Core dependencies — only mcp and dotenv are strictly required.
+# chromadb + sentence-transformers are optional (vector search).
+dependencies = [
+    "mcp>=1.6.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Full vector-search support (adds ~500 MB for model weights)
+vector = [
+    "chromadb>=0.6.0",
+    "sentence-transformers>=3.0.0",
+]
+# Development & testing
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.23",
+]
+# All optional extras
+all = [
+    "chromadb>=0.6.0",
+    "sentence-transformers>=3.0.0",
+]
+
+[project.scripts]
+ai-memory-mcp = "mcp_server:main"
+ai-memory    = "mcp_server:main"
+
+[project.urls]
+Homepage      = "https://github.com/zhanpu89/ai-memory-mcp"
+Documentation = "https://github.com/zhanpu89/ai-memory-mcp#readme"
+Repository    = "https://github.com/zhanpu89/ai-memory-mcp"
+Issues        = "https://github.com/zhanpu89/ai-memory-mcp/issues"
+Changelog     = "https://github.com/zhanpu89/ai-memory-mcp/releases"
+
+[tool.setuptools.packages.find]
+where   = ["src"]
+include = ["mcp_server*"]
+
+[tool.setuptools.package-data]
+mcp_server = ["*.py"]
+
+# ── pytest ──────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths   = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+# ── coverage ─────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["src/mcp_server"]
+omit   = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

@@ -1,0 +1,16 @@
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+venv/
+myenv/
+.env
+ai_memory.db
+vector_db/
+model_cache/
+*.log
+*.pid

@@ -1,0 +1,8 @@
+{
+  "_comment": "HTTP mode — run 'ai-memory-mcp --http' first, then use this config",
+  "mcpServers": {
+    "ai-memory": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}

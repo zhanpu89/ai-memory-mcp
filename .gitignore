@@ -1,0 +1,56 @@
+# ── Python build / packaging ─────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+myenv/
+.venv/
+env/
+
+# ── Runtime data (stay local, never commit) ───────────────────────────────────
+ai_memory.db
+vector_db/
+vector_db_backup/
+model_cache/
+.ai-memory/
+
+# ── Test artefacts ────────────────────────────────────────────────────────────
+test_*.db
+test_integration_ai_memory.db
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+# .env.example is intentionally tracked
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.trae/
+doc/
+*.swp
+*~
+
+# ── OS junk ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs & PIDs ───────────────────────────────────────────────────────────────
+*.log
+*.pid
+
+# ── Docker (deployment scripts kept local) ───────────────────────────────────
+deploy*.sh
+deploy*.bat
+
+# integrations/, Dockerfile, docker-compose.yml are intentionally tracked
