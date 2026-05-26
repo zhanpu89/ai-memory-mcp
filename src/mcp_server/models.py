@@ -81,7 +81,7 @@ class SearchSummariesInput(BaseModel):
     status: Optional[TaskStatus] = Field(default=None, description="状态过滤，精确匹配")
     project_name: Optional[str] = Field(default=None, description="项目名称过滤，精确匹配")
     branch_name: Optional[str] = Field(default=None, description="分支名称过滤，精确匹配")
-    use_fts: bool = Field(default=False, description="是否使用 FTS5 全文检索")
+    use_fts: bool = Field(default=True, description="是否使用 FTS5 全文检索（默认开启，弱模型自动使用）")
     use_vector: bool = Field(default=False, description="是否使用向量语义检索")
     limit: int = Field(default=DEFAULT_SEARCH_LIMIT, description="最大返回条数", ge=1, le=100)
 

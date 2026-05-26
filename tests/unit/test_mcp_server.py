@@ -42,7 +42,7 @@ class TestAiMemoryMcpServer:
                        tags="test,unit", module="test_module",
                        file_paths="test.py,test.txt")
         assert result["success"] is True
-        assert result["message"] == "摘要保存成功"
+        assert "摘要保存成功" in result["message"]
 
         # 重复 session_id 应失败
         result = _save(server, "test-session-1", "测试任务", "这是测试摘要内容")

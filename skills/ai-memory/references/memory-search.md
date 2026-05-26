@@ -12,6 +12,30 @@
 4. **用户提到历史任务**：检索相关会话摘要
 5. **重复模式识别**：发现当前操作与历史经验相关
 
+### 编码场景强制触发（优先级最高）
+
+**规则：遇到以下编码信号时，必须先检索历史再回答，禁止直接推理。**
+
+| 编码信号 | 示例 | 检索策略 |
+|---------|------|---------|
+| **Python/Node 异常** | `AttributeError`, `TypeError`, `ENOENT` | FTS5 精确匹配错误类型 |
+| **构建/环境报错** | `docker build failed`, `pip install error` | FTS5 + 错误关键词 |
+| **依赖/版本冲突** | `chromadb >= 0.4`, `peer dependency` | FTS5 + 包名+版本号 |
+| **配置问题** | `Dockerfile cache`, `.env missing` | FTS5 + 配置文件名 |
+| **性能/优化问题** | "构建太慢", "查询很慢" | 向量语义搜索 + 性能关键词 |
+| **询问工具/库用法** | "chromadb 怎么用", "fastmcp 示例" | FTS5 + 工具名 |
+| **提到历史功能** | "上次的缓存优化", "之前的重构" | 向量语义搜索 + 功能描述 |
+
+**执行流程**（两阶段检索）：
+```
+# 阶段1：精确匹配（速度快，适合报错信息）
+search_summaries_fts(query="错误关键词", project_name=..., limit=3)
+
+# 阶段2：若未命中，语义搜索（覆盖面广）
+if len(results) == 0:
+    search_summaries(query="问题自然语言描述", use_vector=True, project_name=..., limit=3)
+```
+
 ## 检索策略
 
 根据场景选择最优检索方式：

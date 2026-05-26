@@ -509,6 +509,14 @@ def db_store_vector_metadata(
         conn.commit()
 
 
+def db_count_decisions_for_session(db_path: str, session_id: str) -> int:
+    """统计指定会话的技术决策数量（用于保存前的质量检查）。"""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM key_decisions WHERE session_id = ?', (session_id,))
+        return cursor.fetchone()[0]
+
+
 def db_vector_search_by_ids(
     db_path: str,
     session_ids: List[str],
