@@ -25,12 +25,7 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 ARG INSTALL_VECTOR=false
 
-# Copy only pyproject.toml to resolve dep names; actual wheel install comes next.
-# We install deps separately so the heavy packages (chromadb, torch, etc.) are
-# cached in their own layer and NOT invalidated by source code changes.
-COPY pyproject.toml /tmp/pyproject.toml
-
-# Install core deps (always cached unless pyproject.toml changes)
+# Install core deps (always cached unless these version pins change)
 RUN pip install --no-cache-dir "mcp>=1.6.0" "python-dotenv>=1.0.0"
 
 # Install vector deps (cached separately; only runs when INSTALL_VECTOR=true
