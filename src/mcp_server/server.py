@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.prompts import Prompt
 from mcp.types import ToolAnnotations
 
 from .database import (
@@ -97,6 +98,7 @@ class AiMemoryMcpServer(FastMCP):
         self._vector = VectorStore(self.db_path, self.model_cache_dir)
 
         self._register_tools()
+        self._register_prompts()
 
     # ── write tools ───────────────────────────────────────────────────────────
 
@@ -604,6 +606,142 @@ class AiMemoryMcpServer(FastMCP):
             )
 
         logger.info("MCP 工具注册完成")
+
+    # ── MCP prompt templates ─────────────────────────────────────────────────
+
+    def _register_prompts(self) -> None:
+        logger.info("注册 MCP Prompt 模板")
+
+        prompts = [
+            Prompt.from_function(
+                fn=self._prompt_start_session,
+                name="memory-start-session",
+                title="会话启动恢复上下文",
+                description="[必调] 会话启动时调用，自动查询进行中任务并注入上下文。调用后方可回答用户问题。",
+            ),
+            Prompt.from_function(
+                fn=self._prompt_search_error,
+                name="memory-search-error",
+                title="检索历史解决方案",
+                description="[报错/问题] 自动搜索历史记录中相似的错误信息或技术方案，供回答时引用。",
+            ),
+            Prompt.from_function(
+                fn=self._prompt_save_task,
+                name="memory-save-task",
+                title="保存任务摘要",
+                description="[保存] 组织任务摘要并检查字段完整性，用户确认后调用 save_summary 保存。",
+            ),
+        ]
+        for prompt in prompts:
+            self.add_prompt(prompt)
+        logger.info(f"MCP Prompt 模板注册完成 ({len(prompts)} 个)")
+
+    # ── prompt handlers ──────────────────────────────────────────────────────
+
+    def _prompt_start_session(
+        self,
+        project_name: str = "",
+        branch_name: str = "",
+    ) -> str:
+        """返回进行中任务列表和会话上下文"""
+        three_days_ago = (
+            datetime.now() - timedelta(days=INIT_SESSION_DAYS_BACK)
+        ).strftime('%Y-%m-%d %H:%M:%S')
+        pn = project_name or None
+        bn = branch_name or None
+        tasks = db_init_session(self.db_path, three_days_ago, INIT_SESSION_MAX_TASKS, pn, bn)
+
+        lines = ["## 进行中的任务", ""]
+        if tasks:
+            for i, t in enumerate(tasks, 1):
+                ns = t.get("next_steps") or "无"
+                lines.append(f"{i}. **{t['task_title']}**")
+                lines.append(f"   - 状态: {t['status']}  下一步: {ns}")
+                lines.append("")
+            lines.append("请先查看以上任务，再回答用户的问题。")
+            lines.append("如果用户要接续某个任务，先用 get_summary_by_id 获取完整摘要。")
+        else:
+            lines.append("当前没有进行中的任务。")
+            lines.append("如果开始新任务，按 `session-YYYYMMDD-简短描述` 格式创建 session_id。")
+        return "\n".join(lines)
+
+    def _prompt_search_error(
+        self,
+        error_message: str = "",
+        project_name: str = "",
+    ) -> str:
+        """根据报错信息搜索历史记录"""
+        if not error_message:
+            return "请提供 error_message 参数。"
+        pn = project_name or None
+
+        results = db_search_summaries(
+            self.db_path,
+            query=error_message,
+            tags=None, module=None, status=None,
+            project_name=pn, branch_name=None,
+            use_fts=True, limit=5,
+        )
+
+        lines = [f"## 历史检索: {error_message}", ""]
+        if results:
+            lines.append(f"找到 {len(results)} 条相关记录：")
+            lines.append("")
+            for r in results:
+                lines.append(f"- **{r['task_title']}**")
+                lines.append(f"  摘要: {r['summary_content'][:200]}")
+                if r.get("next_steps"):
+                    lines.append(f"  下一步: {r['next_steps']}")
+                lines.append("")
+            lines.append("回答用户前，请先引用以上历史记录。")
+        else:
+            lines.append("未找到历史记录，请自行推理。")
+        return "\n".join(lines)
+
+    def _prompt_save_task(
+        self,
+        session_id: str = "",
+        task_title: str = "",
+        summary_content: str = "",
+        status: str = "completed",
+        file_paths: str = "",
+        tags: str = "",
+        next_steps: str = "",
+    ) -> str:
+        """检查保存字段完整性，返回可预览的摘要"""
+        warnings = []
+        if not file_paths:
+            warnings.append("缺少 file_paths")
+        if not next_steps:
+            warnings.append("缺少 next_steps")
+        if not tags:
+            warnings.append("缺少 tags")
+        if not session_id or not task_title or not summary_content:
+            return "错误：session_id、task_title、summary_content 为必填项。"
+
+        lines = [
+            "## 摘要预览",
+            "",
+            f"- **session_id**: {session_id}",
+            f"- **task_title**: {task_title}",
+            f"- **status**: {status}",
+            f"- **file_paths**: {file_paths or '(未填)'}",
+            f"- **tags**: {tags or '(未填)'}",
+            f"- **next_steps**: {next_steps or '(未填)'}",
+            "",
+            "### 摘要内容",
+            summary_content,
+            "",
+        ]
+        if warnings:
+            lines.append("### ⚠️ 质量提示")
+            for w in warnings:
+                lines.append(f"- {w}")
+            lines.append("")
+            lines.append("建议补充以上缺项，便于未来检索。")
+        lines.append("---")
+        lines.append("向用户展示以上预览，**获得确认后**调用 save_summary 保存。")
+        return "\n".join(lines)
 
 
 def main() -> None:
