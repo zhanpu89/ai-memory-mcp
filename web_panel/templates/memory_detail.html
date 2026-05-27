@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% from "_macros.html" import card, status_badge, quality_circle, tag_chip, decision_badge, progress_bar, suggestion, memory_meta %}
+{% block title %}{{ _('site_title') }} · {{ summary.task_title[:40] }}{% endblock %}
+{% block content %}
+
+<div x-data="memoryDetail()">
+  <div class="anim-in" style="margin-bottom:24px;">
+    <a href="/memories" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.05em;transition:color 0.15s;"
+       onmouseover="this.style.color='#c84c32'" onmouseout="this.style.color='#9a9490'">{{ _('detail_back') }}</a>
+  </div>
+
+  {% set q_level = 'excellent' if quality.percentage >= 80 else 'good' if quality.percentage >= 65 else 'average' if quality.percentage >= 50 else 'below_average' if quality.percentage >= 30 else 'poor' %}
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;">
+    <!-- Main -->
+    <div>
+      {% call card() %}
+        <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
+          {{ quality_circle(quality.percentage, 'lg') }}
+          <div style="flex:1;min-width:0;">
+            <h1 style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:#1e1e1e;letter-spacing:-0.02em;margin:0 0 6px;">{{ summary.task_title }}</h1>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;">
+              {{ status_badge(summary.status) }}
+              <span>{{ summary.created_at }}</span>
+              {% if summary.updated_at and summary.updated_at != summary.created_at %}<span>{{ _('detail_updated') }} {{ summary.updated_at[:10] }}</span>{% endif %}
+              <span>{{ summary.project_name or _('detail_unsorted') }}</span>
+              {% if summary.branch_name %}<span>⎇ {{ summary.branch_name }}</span>{% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:13px;color:#4a4642;line-height:1.8;white-space:pre-wrap;font-family:'DM Sans',sans-serif;">{{ summary.summary_content }}</div>
+
+        {% if summary.tags %}
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:20px;">
+          {% for tag in summary.tags.split(',') %}
+          {{ tag_chip('#' ~ tag.strip()) }}
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if summary.file_paths %}
+        <div style="margin-top:16px;padding:12px 16px;border:1px solid #e8e4df;background:#faf8f5;">
+          <div style="font-size:8px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;">{{ _('detail_referenced_files') }}</div>
+          <div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6a6460;line-height:1.6;">{{ summary.file_paths }}</div>
+        </div>
+        {% endif %}
+
+        {% if summary.next_steps %}
+        <div style="margin-top:16px;padding:12px 16px;border:1px solid rgba(212,168,67,0.25);background:rgba(212,168,67,0.04);">
+          <div style="font-size:8px;font-family:'JetBrains Mono',monospace;color:#b8942e;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;">{{ _('detail_next_steps') }}</div>
+          <div style="font-size:12px;color:#6a6460;line-height:1.5;">{{ summary.next_steps }}</div>
+        </div>
+        {% endif %}
+      {% endcall %}
+
+      <!-- Decisions -->
+      {% call card(_('detail_decisions_title')) %}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;">{{ _('detail_decisions_count', count=decisions|length) }}</span>
+          <button @click="showAddDecision = !showAddDecision" class="btn btn-primary btn-sm">{{ _('detail_decisions_new') }}</button>
+        </div>
+        {% if decisions %}
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          {% for d in decisions %}
+          <div style="padding:12px 16px;border:1px solid #f0ebe6;background:#faf8f5;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              {{ decision_badge(d.decision_type) }}
+            </div>
+            <p style="font-size:13px;color:#4a4642;margin:0;line-height:1.5;">{{ d.description }}</p>
+            {% if d.reasoning %}
+            <p style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;margin:6px 0 0;line-height:1.5;">{{ d.reasoning }}</p>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p style="text-align:center;font-size:11px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;padding:24px 0;">{{ _('detail_decisions_none') }}</p>
+        {% endif %}
+
+        <div x-show="showAddDecision" x-cloak style="margin-top:16px;padding:16px;border:1px solid #e8e4df;background:#faf8f5;display:none;">
+          <p style="font-size:11px;font-weight:600;color:#1e1e1e;margin:0 0 12px;">{{ _('detail_new_decision') }}</p>
+          <form @submit.prevent="submitDecision('{{ summary.session_id }}')" style="display:flex;flex-direction:column;gap:10px;">
+            <select x-model="newDecision.type" class="input" required>
+              <option value="">{{ _('detail_select_type') }}</option>
+              <option value="architecture">{{ _('dec_type_architecture') }}</option>
+              <option value="tech_choice">{{ _('dec_type_tech_choice') }}</option>
+              <option value="bug_fix">{{ _('dec_type_bug_fix') }}</option>
+              <option value="refactor">{{ _('dec_type_refactor') }}</option>
+              <option value="performance">{{ _('dec_type_performance') }}</option>
+              <option value="security">{{ _('dec_type_security') }}</option>
+              <option value="trade_off">{{ _('dec_type_trade_off') }}</option>
+            </select>
+            <textarea x-model="newDecision.description" placeholder="{{ _('detail_decision_desc') }}" class="input" rows="2" required></textarea>
+            <textarea x-model="newDecision.reasoning" placeholder="{{ _('detail_decision_reason') }}" class="input" rows="2"></textarea>
+            <div style="display:flex;gap:8px;">
+              <button type="submit" class="btn btn-primary btn-sm">{{ _('detail_save') }}</button>
+              <button type="button" @click="showAddDecision = false" class="btn btn-secondary btn-sm">{{ _('detail_cancel') }}</button>
+            </div>
+          </form>
+        </div>
+      {% endcall %}
+    </div>
+
+    <!-- Sidebar -->
+    <div>
+      {% call card(_('detail_quality_title')) %}
+        <div style="text-align:center;margin-bottom:16px;">
+          <div style="font-family:'Playfair Display',serif;font-size:42px;font-weight:700;line-height:1;
+            {% if quality.percentage >= 80 %}color:#2a9d8f{% elif quality.percentage >= 65 %}color:#4a7dff{% elif quality.percentage >= 50 %}color:#d4a843{% elif quality.percentage >= 30 %}color:#c84c32{% else %}color:#b91c1c{% endif %};">
+            {{ quality.percentage|round }}%
+          </div>
+          <div style="font-size:9px;font-family:'DM Sans',sans-serif;color:#9a9490;letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;">{{ _('detail_overall_score') }}</div>
+        </div>
+        {{ progress_bar(quality.percentage|round, 'primary' if quality.percentage >= 65 else 'terracotta') }}
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:20px;">
+          {% for key, item in quality.dimensions.items() %}
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              {% if item.ok %}
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#2a9d8f" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+              {% else %}
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d4d0cb" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"/></svg>
+              {% endif %}
+              <span style="color:#6a6460;font-family:'JetBrains Mono',monospace;">{{ item.label }}</span>
+            </div>
+            <span style="color:#b0aaa6;font-family:'JetBrains Mono',monospace;font-size:10px;">{{ item.score }}/{{ item.max }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top:12px;">{{ suggestion(quality.suggestion, quality.level) }}</div>
+      {% endcall %}
+
+      {% call card(_('detail_vector_title')) %}
+        {% if has_vector %}
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="width:6px;height:6px;border-radius:50%;background:#2a9d8f;"></span>
+          <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#2a9d8f;">{{ _('detail_vector_indexed') }}</span>
+        </div>
+        {% else %}
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="width:6px;height:6px;border-radius:50%;background:#d4d0cb;"></span>
+          <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;">{{ _('detail_vector_not_indexed') }}</span>
+        </div>
+        {% endif %}
+      {% endcall %}
+
+      {% call card(_('detail_hits_title')) %}
+        <div style="text-align:center;margin-bottom:12px;">
+          <div style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:#8b5cf6;line-height:1;">{{ total_hits }}</div>
+          <div style="font-size:9px;font-family:'DM Sans',sans-serif;color:#9a9490;letter-spacing:0.08em;text-transform:uppercase;">{{ _('detail_total_hits') }}</div>
+        </div>
+        {% if hits %}
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          {% for h in hits[:5] %}
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:10px;font-family:'JetBrains Mono',monospace;">
+            <span style="color:#6a6460;">{{ {'search_fts': _('hit_type_fts'), 'search_vector': _('hit_type_vector'), 'search_like': _('hit_type_like'), 'direct_access': _('hit_type_direct')}.get(h.hit_type, h.hit_type) }}</span>
+            <span style="color:#9a9490;">{{ h.hit_count }}{{ _('hit_times') }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% if hits %}<div style="font-size:9px;color:#b0aaa6;margin-top:8px;font-family:'JetBrains Mono',monospace;">{{ _('detail_hits_last') }}: {{ hits[0].last_hit_at or '—' }}</div>{% endif %}
+        {% else %}
+        <p style="text-align:center;font-size:10px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;">{{ _('detail_hits_none') }}</p>
+        {% endif %}
+      {% endcall %}
+
+      {% call card(_('detail_actions_title')) %}
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button @click="showUpdateModal = true" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:11px;">{{ _('detail_edit') }}</button>
+          <button @click="confirmDelete('{{ summary.session_id }}')" class="btn btn-danger" style="width:100%;justify-content:center;font-size:11px;">{{ _('detail_delete') }}</button>
+        </div>
+      {% endcall %}
+    </div>
+  </div>
+
+  <div x-show="showUpdateModal" x-cloak class="modal-overlay" style="display:none;">
+    <div class="modal-box" @click.outside="showUpdateModal = false">
+      <h3 class="modal-title">{{ _('detail_edit_modal_title') }}</h3>
+      <form @submit.prevent="updateMemory('{{ summary.session_id }}')" style="display:flex;flex-direction:column;gap:16px;">
+        <div>
+          <label style="display:block;font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">{{ _('detail_edit_status') }}</label>
+          <select x-model="updateData.status" class="input">
+            <option value="completed" {% if summary.status == 'completed' %}selected{% endif %}>{{ _('status_completed') }}</option>
+            <option value="in_progress" {% if summary.status == 'in_progress' %}selected{% endif %}>{{ _('status_in_progress') }}</option>
+            <option value="blocked" {% if summary.status == 'blocked' %}selected{% endif %}>{{ _('status_blocked') }}</option>
+            <option value="abandoned" {% if summary.status == 'abandoned' %}selected{% endif %}>{{ _('status_abandoned') }}</option>
+            <option value="pending" {% if summary.status == 'pending' %}selected{% endif %}>{{ _('status_pending') }}</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">{{ _('detail_edit_content') }}</label>
+          <textarea x-model="updateData.content" class="input" rows="6">{{ summary.summary_content }}</textarea>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="submit" class="btn btn-primary btn-sm">{{ _('detail_save') }}</button>
+          <button type="button" @click="showUpdateModal = false" class="btn btn-secondary btn-sm">{{ _('detail_cancel') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function memoryDetail() {
+  return {
+    showAddDecision: false,
+    showUpdateModal: false,
+    newDecision: { type: '', description: '', reasoning: '' },
+    updateData: { status: '{{ summary.status }}', content: {{ summary.summary_content|tojson|safe }} },
+
+    async submitDecision(sessionId) {
+      try {
+        const res = await fetch(`/api/memories/${sessionId}/decisions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            decision_type: this.newDecision.type,
+            description: this.newDecision.description,
+            reasoning: this.newDecision.reasoning || null,
+          }),
+        });
+        if (!res.ok) throw new Error('{{ _("detail_submit_failed") }}');
+        location.reload();
+      } catch (e) { alert(e.message); }
+    },
+
+    async updateMemory(sessionId) {
+      try {
+        const res = await fetch(`/api/memories/${sessionId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            new_status: this.updateData.status,
+            updated_content: this.updateData.content,
+          }),
+        });
+        if (!res.ok) throw new Error('{{ _("detail_update_failed") }}');
+        location.reload();
+      } catch (e) { alert(e.message); }
+    },
+
+    async confirmDelete(sessionId) {
+      if (!confirm('{{ _("detail_delete_confirm") }}')) return;
+      try {
+        const res = await fetch(`/api/memories/${sessionId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('{{ _("detail_delete_failed") }}');
+        window.location.href = '/memories';
+      } catch (e) { alert(e.message); }
+    },
+  };
+}
+</script>
+{% endblock %}

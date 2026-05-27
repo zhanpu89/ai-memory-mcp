@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import card, status_badge, quality_circle, memory_meta, pagination, empty_state %}
+{% block title %}{{ _('site_title') }} · {{ _('memories_title') }}{% endblock %}
+{% block content %}
+
+<div x-data="memoryManager()">
+  <div class="anim-in" style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:28px;">
+    <div>
+      <h1 style="font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:#1e1e1e;letter-spacing:-0.02em;margin:0;">{{ _('memories_title') }}</h1>
+      <p style="font-size:13px;color:#9a9490;margin:6px 0 0;">{{ _('memories_subtitle', count=total) }}</p>
+    </div>
+    <div style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.05em;">{{ _('memories_total', count=total) }}</div>
+  </div>
+
+  <div class="filters-bar anim-in d1" style="margin-bottom:24px;">
+    <form method="GET" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;">
+      <div style="flex:1;min-width:200px;">
+        <label style="display:block;font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">{{ _('memories_filter_search') }}</label>
+        <input type="text" name="q" value="{{ q }}" placeholder="{{ _('memories_search_placeholder') }}" class="input" />
+      </div>
+      <div>
+        <label style="display:block;font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">{{ _('memories_filter_project') }}</label>
+        <select name="project" class="input select" style="min-width:140px;" onchange="this.form.submit()">
+          <option value="">{{ _('memories_all_projects') }}</option>
+          {% for p in projects %}
+          <option value="{{ p }}" {% if project_filter == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">{{ _('memories_filter_status') }}</label>
+        <select name="status" class="input select" style="min-width:130px;" onchange="this.form.submit()">
+          <option value="">{{ _('memories_all_status') }}</option>
+          <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>{{ _('status_completed') }}</option>
+          <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>{{ _('status_in_progress') }}</option>
+          <option value="blocked" {% if status_filter == 'blocked' %}selected{% endif %}>{{ _('status_blocked') }}</option>
+          <option value="abandoned" {% if status_filter == 'abandoned' %}selected{% endif %}>{{ _('status_abandoned') }}</option>
+          <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>{{ _('status_pending') }}</option>
+        </select>
+      </div>
+      <input type="hidden" name="sort" value="{{ sort }}" />
+      <input type="hidden" name="order" value="{{ order }}" />
+      <button type="submit" class="btn btn-primary">{{ _('memories_filter_btn') }}</button>
+      <a href="/memories" class="btn btn-secondary">{{ _('memories_reset_btn') }}</a>
+    </form>
+  </div>
+
+  {% if summaries %}
+  <div style="display:flex;flex-direction:column;gap:1px;background:#e8e4df;border:1px solid #e8e4df;">
+    {% for s in summaries %}
+    {% set q = s._quality %}
+    {% set q_level = 'excellent' if q.percentage >= 80 else 'good' if q.percentage >= 65 else 'average' if q.percentage >= 50 else 'below_average' if q.percentage >= 30 else 'poor' %}
+    <a href="/memories/{{ s.session_id }}" style="display:flex;align-items:flex-start;gap:16px;padding:16px 20px;background:#ffffff;transition:all 0.15s;text-decoration:none;"
+       onmouseover="this.style.background='#faf8f5'" onmouseout="this.style.background='#ffffff'">
+      {{ quality_circle(q.percentage) }}
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+          <span style="font-size:14px;font-weight:600;color:#1e1e1e;transition:color 0.15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+                onmouseover="this.style.color='#c84c32'" onmouseout="this.style.color='#1e1e1e'">{{ s.task_title }}</span>
+          {{ status_badge(s.status) }}
+        </div>
+        <p style="font-size:12px;color:#9a9490;line-height:1.5;margin:0 0 8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">{{ s.summary_content[:200] }}{% if s.summary_content|length > 200 %}…{% endif %}</p>
+        {{ memory_meta(tags=s.tags, project=s.project_name, branch=s.branch_name, date=s.created_at) }}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% set base_url = "?per_page=" ~ per_page ~ "&q=" ~ q ~ "&project=" ~ project_filter ~ "&status=" ~ status_filter ~ "&sort=" ~ sort ~ "&order=" ~ order %}
+  {{ pagination(page, total_pages, total, base_url) }}
+
+  {% else %}
+  <div class="anim-in d2">{{ empty_state('memories_no_results', 'memories_no_results_hint') }}</div>
+  {% endif %}
+</div>
+
+<script>
+function memoryManager() {
+  return {};
+}
+</script>
+{% endblock %}

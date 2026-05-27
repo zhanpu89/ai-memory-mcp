@@ -52,9 +52,17 @@ all = [
     "sentence-transformers>=3.0.0",
 ]
 
+# Web panel
+web = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "jinja2>=3.1.0",
+]
+
 [project.scripts]
 ai-memory-mcp = "mcp_server:main"
 ai-memory    = "mcp_server:main"
+ai-memory-web = "web_panel:main"
 
 [project.urls]
 Homepage      = "https://github.com/zhanpu89/ai-memory-mcp"
@@ -64,11 +72,12 @@ Issues        = "https://github.com/zhanpu89/ai-memory-mcp/issues"
 Changelog     = "https://github.com/zhanpu89/ai-memory-mcp/releases"
 
 [tool.setuptools.packages.find]
-where   = ["src"]
-include = ["mcp_server*"]
+where   = ["src", "."]
+include = ["mcp_server*", "web_panel*"]
 
 [tool.setuptools.package-data]
 mcp_server = ["*.py"]
+web_panel = ["*.py", "templates/*.html"]
 
 # ── pytest ──────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]

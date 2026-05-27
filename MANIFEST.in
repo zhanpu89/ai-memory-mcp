@@ -6,3 +6,5 @@ include .env.example
 include pyproject.toml
 recursive-include integrations *.json
 recursive-include src *.py
+recursive-include web_panel *.py
+recursive-include web_panel/templates *.html

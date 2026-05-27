@@ -1,0 +1,121 @@
+{#
+  ─────────────────────────────────────────────
+  Component System — Mid-Century Editorial
+  All text uses _('key') for i18n support.
+  ─────────────────────────────────────────────
+  Import with: {% from "_macros.html" import card, stat, badge, ... %}
+#}
+
+{# ── Card ── #}
+{% macro card(title=None, class="") %}
+<div class="card {{ class }}">
+  {% if title %}
+  <div class="card-head">
+    <h2 class="card-title">{{ title }}</h2>
+  </div>
+  {% endif %}
+  <div class="card-body">
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}
+
+{# ── Stat block ── #}
+{% macro stat(value, label_key, color="primary", class="") %}
+<div class="stat-block {{ class }}">
+  <span class="stat-value stat-{{ color }}">{{ value }}</span>
+  <span class="stat-label">{{ _(label_key) }}</span>
+</div>
+{% endmacro %}
+
+{# ── Status badge ── #}
+{% macro status_badge(status) %}
+{% set map = {
+  'completed': ('status_completed', 'status-teal'),
+  'in_progress': ('status_in_progress', 'status-amber'),
+  'blocked': ('status_blocked', 'status-red'),
+  'abandoned': ('status_abandoned', 'status-gray'),
+  'pending': ('status_pending', 'status-blue'),
+} %}
+{% set key, cls = map.get(status, (status, 'status-gray')) %}
+<span class="status-badge {{ cls }}">{{ _(key) }}</span>
+{% endmacro %}
+
+{# ── Quality circle ── #}
+{% macro quality_circle(percentage, size="md") %}
+{% set level = 'excellent' if percentage >= 80 else 'good' if percentage >= 65 else 'average' if percentage >= 50 else 'below_average' if percentage >= 30 else 'poor' %}
+{% set size_class = 'q-sm' if size == 'sm' else 'q-lg' if size == 'lg' else '' %}
+<div class="q-circle q-{{ level }} {{ size_class }}">{{ percentage|round|int }}<span class="q-pct">%</span></div>
+{% endmacro %}
+
+{# ── Tag chip ── #}
+{% macro tag_chip(text) %}
+<span class="tag-chip">{{ text }}</span>
+{% endmacro %}
+
+{# ── Decision badge ── #}
+{% macro decision_badge(dtype) %}
+{% set map = {
+  'architecture': ('dec_type_architecture', 'dec-arch'),
+  'tech_choice': ('dec_type_tech_choice', 'dec-stack'),
+  'bug_fix': ('dec_type_bug_fix', 'dec-fix'),
+  'refactor': ('dec_type_refactor', 'dec-refactor'),
+  'performance': ('dec_type_performance', 'dec-perf'),
+  'security': ('dec_type_security', 'dec-secure'),
+  'trade_off': ('dec_type_trade_off', 'dec-trade'),
+} %}
+{% set key, cls = map.get(dtype, (dtype, 'dec-default')) %}
+<span class="dec-badge {{ cls }}">{{ _(key) }}</span>
+{% endmacro %}
+
+{# ── Progress bar ── #}
+{% macro progress_bar(pct, color="primary") %}
+<div class="prog-track">
+  <div class="prog-fill prog-{{ color }}" style="width: {{ pct|round }}%"></div>
+</div>
+{% endmacro %}
+
+{# ── Pagination ── #}
+{% macro pagination(page, total_pages, total, base_url) %}
+<div class="page-foot">
+  <span class="page-info">{{ _('memories_page', page=page, total_pages=total_pages, total=total) }}</span>
+  <div class="page-actions">
+    {% if page > 1 %}
+    <a href="{{ base_url }}&page={{ page - 1 }}" class="page-btn">{{ _('memories_prev') }}</a>
+    {% endif %}
+    {% if page < total_pages %}
+    <a href="{{ base_url }}&page={{ page + 1 }}" class="page-btn">{{ _('memories_next') }}</a>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{# ── Suggestion box ── #}
+{% macro suggestion(text, level) %}
+{% set cls = 'sug-excellent' if level == 'excellent' else 'sug-average' if level in ('good', 'average') else 'sug-poor' %}
+<div class="suggestion {{ cls }}">{{ text }}</div>
+{% endmacro %}
+
+{# ── Empty state ── #}
+{% macro empty_state(message_key, hint_key=None) %}
+<div class="empty-state">
+  <div class="empty-icon">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><path d="M16 16s-1.5-2-4-2-4 2-4 2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
+    </svg>
+  </div>
+  <p class="empty-msg">{{ _(message_key) }}</p>
+  {% if hint_key %}<p class="empty-hint">{{ _(hint_key) }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{# ── Memory meta line ── #}
+{% macro memory_meta(tags=None, project=None, branch=None, date=None, module=None) %}
+<div class="meta-line">
+  {% if tags %}<span class="meta-tags">{{ tags }}</span>{% endif %}
+  {% if project %}<span class="meta-item">{{ project }}</span>{% endif %}
+  {% if branch %}<span class="meta-item">⎇ {{ branch }}</span>{% endif %}
+  {% if module %}<span class="meta-item">{{ module }}</span>{% endif %}
+  {% if date %}<span class="meta-item">{{ date[:10] }}</span>{% endif %}
+</div>
+{% endmacro %}

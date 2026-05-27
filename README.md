@@ -153,6 +153,7 @@ The AI will call `init_session` and restore your previous context automatically.
 | **Weekly reports** | Auto-generated Markdown report |
 | **Transport** | stdio (local) or streamable-HTTP (remote) |
 | **Docker** | Single-container deployment included |
+| **Web Panel** | FastAPI dashboard — manage memories, quality scoring, search, hit analytics |
 
 ---
 
@@ -171,10 +172,57 @@ The AI will call `init_session` and restore your previous context automatically.
 │  │  SQLite DB   │    │  ChromaDB (optional) │   │
 │  │  FTS5 index  │    │  Sentence-Transformers│  │
 │  └──────────────┘    └──────────────────────┘   │
+└──────────────────────┬──────────────────────────┘
+                       │ reads same DB
+┌──────────────────────▼──────────────────────────┐
+│            Web Panel (FastAPI + Jinja2)          │
+│   Dashboard · Memory List · Detail · Search     │
+│   Quality Scoring · Hit Analytics · CRUD        │
 └─────────────────────────────────────────────────┘
 ```
 
 **Data lives in `~/.ai-memory/`** — completely separate from your project files.
+
+---
+
+## Web Management Panel
+
+A built-in web dashboard for managing memories, analyzing quality scores, searching, and viewing hit analytics — no extra build tools required.
+
+### Start
+
+```bash
+# Requires optional dependencies
+pip install "ai-memory-mcp[web]"
+
+# Start the web panel
+ai-memory-web
+
+# Or from source
+python web_panel/main.py
+```
+
+Open `http://127.0.0.1:8080` in your browser.
+
+### Pages
+
+| Page | Description |
+|---|---|
+| **Dashboard** | Stats cards (total / completed / in-progress / decisions / hits / avg quality), quality distribution chart, hit trend line, top-5 memories |
+| **Memories** | Paginated list with project/status filters, keyword search, quality badges, inline improvement suggestions |
+| **Memory Detail** | Full content, 10-dimension quality breakdown, decision CRUD, hit stats, vector index status, edit/delete |
+| **Search** | FTS5 full-text + LIKE fuzzy search dual mode |
+
+### Quality Scoring Engine
+
+10-dimension evaluation (tags / module / file_paths / next_steps / project_name / branch_name / decisions / vector_embedding / content_length / valid_status), scored 0-100 with 5 levels and per-dimension improvement suggestions.
+
+### Configuration
+
+| Env var | Default | Description |
+|---|---|---|
+| `AI_MEMORY_WEB_HOST` | `127.0.0.1` | Web panel bind address |
+| `AI_MEMORY_WEB_PORT` | `8080` | Web panel port |
 
 ---
 
@@ -205,8 +253,10 @@ All settings are optional — sensible defaults work out of the box.
 |---|---|---|
 | `AI_MEMORY_DB_PATH` | `~/.ai-memory/ai_memory.db` | SQLite database path |
 | `AI_MEMORY_MODEL_PATH` | `~/.ai-memory/models` | Embedding model cache |
-| `AI_MEMORY_HOST` | `127.0.0.1` | HTTP server bind address |
-| `AI_MEMORY_PORT` | `8000` | HTTP server port |
+| `AI_MEMORY_HOST` | `127.0.0.1` | MCP HTTP server bind address |
+| `AI_MEMORY_PORT` | `8000` | MCP HTTP server port |
+| `AI_MEMORY_WEB_HOST` | `127.0.0.1` | Web panel bind address |
+| `AI_MEMORY_WEB_PORT` | `8080` | Web panel port |
 
 Create `~/.ai-memory/.env` to persist settings:
 
@@ -275,6 +325,15 @@ ai-memory-mcp/
 ├── tests/
 │   ├── unit/              # 24 unit tests
 │   └── integration/
+├── web_panel/             # Web management dashboard
+│   ├── main.py            # FastAPI app + routes
+│   ├── quality.py         # 10-dimension quality scoring engine
+│   └── templates/         # Jinja2 templates (Tailwind + Alpine.js)
+│       ├── base.html
+│       ├── dashboard.html
+│       ├── memories.html
+│       ├── memory_detail.html
+│       └── search.html
 ├── scripts/
 │   ├── download_model.py  # Manual model download
 │   ├── migrate_db.py      # Database migration helper
@@ -317,6 +376,11 @@ All 27 tests cover: save/update/search/FTS/vector/decisions/maintenance/init/rev
 **Optional (vector search):**
 - `chromadb >= 0.6.0`
 - `sentence-transformers >= 3.0.0`
+
+**Optional (web panel):**
+- `fastapi >= 0.100.0`
+- `uvicorn >= 0.20.0`
+- `jinja2 >= 3.1.0`
 
 ---
 

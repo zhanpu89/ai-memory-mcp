@@ -3,26 +3,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # Set INSTALL_VECTOR=true to include chromadb + sentence-transformers
       args:
         INSTALL_VECTOR: "false"
-    image: ai-memory-mcp:latest
+    image: ai-memory-mcp:2.0
     container_name: ai-memory-mcp
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      # Persist database and vector index (lightweight)
       - ai_memory_data:/data
-      # Mount model cache separately (heavy: ~500MB, reusable across rebuilds)
-      # Download models on host first, then mount: docker run -v ./models:/models ...
       - /opt/ai-memory/models:/models:ro
     environment:
       AI_MEMORY_HOST: "0.0.0.0"
       AI_MEMORY_PORT: "8000"
       AI_MEMORY_DB_PATH: "/data/ai_memory.db"
       AI_MEMORY_MODEL_PATH: "/models"
-      # Use HuggingFace mirror for model downloads (China)
       HF_ENDPOINT: "https://hf-mirror.com"
     healthcheck:
       test: ["CMD", "python3", "-c",
@@ -31,6 +26,28 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  ai-memory-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_WEB: "true"
+    image: ai-memory-mcp:2.0
+    container_name: ai-memory-mcp-web
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ai_memory_data:/data
+    environment:
+      AI_MEMORY_DB_PATH: "/data/ai_memory.db"
+      AI_MEMORY_WEB_HOST: "0.0.0.0"
+      AI_MEMORY_WEB_PORT: "8080"
+    command: ["ai-memory-web"]
+    depends_on:
+      ai-memory:
+        condition: service_started
 
 volumes:
   ai_memory_data:

@@ -1,43 +1,34 @@
-# ── Stage 1: builder ─────────────────────────────────────────────────────────
-FROM docker.1ms.run/library/python:3.12-slim AS builder
-
-WORKDIR /build
-
-# Configure pip to use Chinese mirror (Tsinghua)
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-
-# Install build tools
-RUN pip install --no-cache-dir build
-
-# Copy only files needed for packaging
-COPY pyproject.toml README.md MANIFEST.in ./
-COPY src/ ./src/
-
-# Build wheel
-RUN python -m build --wheel --outdir /dist
-
-
-# ── Stage 2: deps — rebuilt only when pyproject.toml/extras change ───────────
-# This stage is cached independently. Code changes never bust this layer.
+# ── Stage 1: dependencies — cached except when pyproject.toml / build-args change ──
 FROM docker.1ms.run/library/python:3.12-slim AS deps
 
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
-ARG INSTALL_VECTOR=false
+# Build-system tools needed by --no-build-isolation in the runtime stage
+RUN pip install --no-cache-dir setuptools wheel
 
-# Install core deps (always cached unless these version pins change)
+ARG INSTALL_VECTOR=false
+ARG INSTALL_WEB=false
+
+# Core runtime dependencies
 RUN pip install --no-cache-dir "mcp>=1.6.0" "python-dotenv>=1.0.0"
 
-# Install vector deps (cached separately; only runs when INSTALL_VECTOR=true
-# AND this layer is not already cached)
+# Vector dependencies (heavy — cached separately; only installed when requested)
 RUN if [ "$INSTALL_VECTOR" = "true" ]; then \
         pip install --no-cache-dir \
             "chromadb>=0.6.0" \
             "sentence-transformers>=3.0.0"; \
     fi
 
+# Web dependencies (cached separately; only installed when requested)
+RUN if [ "$INSTALL_WEB" = "true" ]; then \
+        pip install --no-cache-dir \
+            "fastapi>=0.109.0" \
+            "uvicorn[standard]>=0.27.0" \
+            "jinja2>=3.1.0"; \
+    fi
 
-# ── Stage 3: runtime — only code changes here, rebuilds in seconds ────────────
+
+# ── Stage 2: runtime — code changes rebuild in ~5 seconds ──
 FROM docker.1ms.run/library/python:3.12-slim
 
 LABEL org.opencontainers.image.title="ai-memory-mcp"
@@ -47,36 +38,36 @@ LABEL org.opencontainers.image.source="https://github.com/zhanpu89/ai-memory-mcp
 
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
-# Create non-root user
 RUN useradd --create-home --shell /bin/bash mcpuser
 
 WORKDIR /app
 
-# Copy installed packages from deps stage (cached layer, no re-download)
+# Copy pre-installed packages from deps stage (cached — never redownloads)
 COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=deps /usr/local/bin /usr/local/bin
 
-# Install the application wheel (only the package itself, deps already present)
-# This layer is tiny (~50KB) and rebuilds in seconds on every code change.
-COPY --from=builder /dist/*.whl /tmp/
-RUN pip install --no-cache-dir --no-deps /tmp/*.whl && rm /tmp/*.whl
+# Copy source code (only this layer is rebuilt on code changes)
+COPY pyproject.toml README.md MANIFEST.in ./
+COPY src/ ./src/
+COPY web_panel/ ./web_panel/
 
-# Data volume — database and vector index live here
-# Model cache is mounted separately (see docker-compose.yml)
+# Install the package itself — no download, no build isolation, no deps resolution
+RUN pip install --no-cache-dir --no-build-isolation --no-deps -e .
+
+# Data volume
 RUN mkdir -p /data /models && chown -R mcpuser:mcpuser /data /models
 VOLUME ["/data"]
 
-# Environment defaults (can be overridden at runtime)
 ENV AI_MEMORY_DB_PATH=/data/ai_memory.db \
     AI_MEMORY_MODEL_PATH=/models \
     AI_MEMORY_HOST=0.0.0.0 \
     AI_MEMORY_PORT=8000 \
+    AI_MEMORY_WEB_HOST=0.0.0.0 \
+    AI_MEMORY_WEB_PORT=8080 \
     HF_ENDPOINT=https://hf-mirror.com
 
-# Switch to non-root user
 USER mcpuser
 
-EXPOSE 8000
+EXPOSE 8000 8080
 
-# Default: HTTP / streamable-HTTP transport
 CMD ["ai-memory-mcp", "--http"]
