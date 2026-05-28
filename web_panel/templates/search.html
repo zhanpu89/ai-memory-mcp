@@ -29,6 +29,14 @@
   {% if query %}
   {% if results %}
   <div class="anim-in d2" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.05em;margin-bottom:16px;">{{ _('search_results', count=results|length) }}</div>
+  {% if query_tags %}
+  <div style="display:flex;gap:6px;margin-bottom:14px;" class="anim-in d2">
+    <span style="font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.05em;padding-top:2px;">{{ _('search_auto_tags') }}:</span>
+    {% for t in query_tags %}
+    <span style="font-size:9px;font-family:'JetBrains Mono',monospace;background:#f0edec;color:#6b6460;padding:2px 8px;border-radius:3px;">{{ t }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
   <div style="display:flex;flex-direction:column;gap:1px;background:#e8e4df;border:1px solid #e8e4df;" class="anim-in d2">
     {% for s in results %}
     {% set q = s._quality %}
@@ -50,6 +58,21 @@
   </div>
   {% else %}
   <div class="anim-in d2">{{ empty_state('search_no_results', 'search_no_results_hint') }}</div>
+  {% if suggest_misses %}
+  <div class="anim-in d3" style="margin-top:20px;padding:16px 20px;background:#faf8f5;border:1px solid #e8e4df;border-radius:8px;">
+    <div style="font-size:9px;font-family:'JetBrains Mono',monospace;color:#c84c32;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:10px;">{{ _('search_miss_suggestions') }}</div>
+    <p style="font-size:11px;color:#9a9490;margin:0 0 10px;">{{ _('search_miss_suggestions_hint') }}</p>
+    <ul style="margin:0;padding:0;list-style:none;">
+      {% for m in suggest_misses %}
+      <li style="margin-bottom:4px;">
+        <a href="/search?q={{ m.query_text | urlencode }}" style="font-size:12px;color:#6b6460;text-decoration:none;border-bottom:1px dashed #d4cfca;transition:color 0.15s, border-color 0.15s;"
+           onmouseover="this.style.color='#c84c32';this.style.borderColor='#c84c32'" onmouseout="this.style.color='#6b6460';this.style.borderColor='#d4cfca'">{{ m.query_text }}</a>
+        <span style="font-size:9px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;margin-left:6px;">×{{ m.hit_count }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   {% endif %}
   {% else %}
   <div class="anim-in d2">{{ empty_state('search_initial', 'search_initial_hint') }}</div>

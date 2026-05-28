@@ -3,9 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        INSTALL_VECTOR: "false"
-    image: ai-memory-mcp:2.0
+      target: ai-memory
+    image: ai-memory-mcp:latest
     container_name: ai-memory-mcp
     restart: unless-stopped
     ports:
@@ -31,9 +30,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        INSTALL_WEB: "true"
-    image: ai-memory-mcp:2.0
+      target: ai-memory-web
+    image: ai-memory-mcp-web:latest
     container_name: ai-memory-mcp-web
     restart: unless-stopped
     ports:

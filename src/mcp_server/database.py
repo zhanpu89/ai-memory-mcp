@@ -1,11 +1,12 @@
 """SQLite database initialization, migration, and CRUD operations."""
 import sqlite3
 import logging
+import re
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, Generator, List, Optional
 
-from .models import DEFAULT_MODEL_NAME
+from .models import DEFAULT_MODEL_NAME, DEFAULT_MODEL_SNAPSHOT_HASH
 
 logger = logging.getLogger('ai_memory_mcp')
 
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS session_summaries (
     file_paths TEXT,
     project_name TEXT,
     branch_name TEXT,
+    agent_source TEXT,
     created_at DATETIME,
     updated_at DATETIME
 )
@@ -48,12 +50,46 @@ CREATE VIRTUAL TABLE IF NOT EXISTS summary_fts USING fts5(
 )
 '''
 
+_CREATE_MEMORY_HITS = '''
+CREATE TABLE IF NOT EXISTS memory_hits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    hit_type TEXT NOT NULL,
+    query_text TEXT,
+    hit_count INTEGER DEFAULT 1,
+    first_hit_at DATETIME,
+    last_hit_at DATETIME,
+    FOREIGN KEY (session_id) REFERENCES session_summaries(session_id)
+)
+'''
+
+_CREATE_SUMMARY_HISTORY = '''
+CREATE TABLE IF NOT EXISTS summary_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    task_title TEXT,
+    summary_content TEXT,
+    status TEXT,
+    next_steps TEXT,
+    tags TEXT,
+    module TEXT,
+    file_paths TEXT,
+    project_name TEXT,
+    branch_name TEXT,
+    agent_source TEXT,
+    created_at DATETIME,
+    FOREIGN KEY (session_id) REFERENCES session_summaries(session_id)
+)
+'''
+
 _CREATE_VECTOR_METADATA = '''
 CREATE TABLE IF NOT EXISTS vector_metadata (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT UNIQUE NOT NULL,
     vector_id TEXT,
     model_name TEXT,
+    model_version TEXT,
     embedding_dim INTEGER,
     created_at DATETIME
 )
@@ -129,6 +165,10 @@ def init_db(db_path: str) -> None:
                 cursor.execute(idx_sql)
 
             cursor.execute(_CREATE_SUMMARY_FTS)
+            cursor.execute(_CREATE_MEMORY_HITS)
+            cursor.execute(_CREATE_SUMMARY_HISTORY)
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_summary_history_session ON summary_history (session_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_summary_history_version ON summary_history (session_id, version)')
             cursor.execute(_CREATE_VECTOR_METADATA)
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_vector_metadata_session_id ON vector_metadata (session_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_vector_metadata_vector_id ON vector_metadata (vector_id)')
@@ -153,10 +193,18 @@ def _migrate_add_missing_columns(cursor: sqlite3.Cursor) -> None:
             return
         cursor.execute("PRAGMA table_info(session_summaries)")
         existing = {row[1] for row in cursor.fetchall()}
-        for col, col_type in {'project_name': 'TEXT', 'branch_name': 'TEXT'}.items():
+        for col, col_type in {'project_name': 'TEXT', 'branch_name': 'TEXT', 'agent_source': 'TEXT'}.items():
             if col not in existing:
                 logger.info(f"添加缺失列: {col}")
                 cursor.execute(f'ALTER TABLE session_summaries ADD COLUMN {col} {col_type}')
+        # Migrate vector_metadata table
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vector_metadata'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(vector_metadata)")
+            vmeta_cols = {row[1] for row in cursor.fetchall()}
+            if 'model_version' not in vmeta_cols:
+                logger.info("添加缺失列: model_version (vector_metadata)")
+                cursor.execute('ALTER TABLE vector_metadata ADD COLUMN model_version TEXT')
     except Exception as e:
         logger.error(f"列迁移失败: {e}")
 
@@ -201,6 +249,7 @@ def db_save_summary(
     file_paths: Optional[str],
     project_name: Optional[str],
     branch_name: Optional[str],
+    agent_source: Optional[str] = None,
 ) -> Dict[str, Any]:
     local_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
@@ -214,11 +263,11 @@ def db_save_summary(
             INSERT INTO session_summaries
                 (session_id, timestamp, task_title, status, summary_content,
                  next_steps, tags, module, file_paths, project_name, branch_name,
-                 created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 agent_source, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (session_id, local_time, task_title, status, summary_content,
                   next_steps, tags, module, file_paths, project_name, branch_name,
-                  local_time, local_time))
+                   agent_source, local_time, local_time))
             conn.commit()
 
             cursor.execute('SELECT id FROM session_summaries WHERE session_id = ?', (session_id,))
@@ -265,14 +314,18 @@ def db_update_summary(
     params.append(local_time)
     params.append(session_id)
 
-    sql = f"UPDATE session_summaries SET {', '.join(updates)} WHERE session_id = ?"
-
     try:
         with get_db_connection(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(sql, params)
-            if cursor.rowcount == 0:
+            cursor.execute('SELECT * FROM session_summaries WHERE session_id = ?', (session_id,))
+            old = cursor.fetchone()
+            if not old:
                 return error_response(f"未找到 session_id '{session_id}'，无法更新")
+
+            _save_history(cursor, session_id, old)
+
+            sql = f"UPDATE session_summaries SET {', '.join(updates)} WHERE session_id = ?"
+            cursor.execute(sql, params)
             conn.commit()
 
             if updated_content is not None:
@@ -312,17 +365,20 @@ def db_search_summaries(
         cursor = conn.cursor()
         if use_fts and query:
             sql = '''
-            SELECT s.* FROM session_summaries s
+            SELECT s.*, f.rank as bm25_rank FROM session_summaries s
             INNER JOIN summary_fts f ON s.id = f.rowid
             WHERE summary_fts MATCH ?
             '''
-            fts_query = f'"{query}"'
+            cleaned = re.sub(r'[^\w\s\u4e00-\u9fff-]', ' ', query)
+            fts_query = " AND ".join(w for w in cleaned.split() if w.strip())
+            if not fts_query:
+                fts_query = query
             params: List[Any] = [fts_query]
             conditions: List[str] = []
             build_filter_conditions(conditions, params, project_name, branch_name, status)
             if conditions:
                 sql += " AND " + " AND ".join(conditions)
-            sql += " ORDER BY s.created_at DESC LIMIT ?"
+            sql += " ORDER BY rank, s.updated_at DESC, s.created_at DESC LIMIT ?"
             params.append(limit)
         else:
             sql = "SELECT * FROM session_summaries WHERE 1=1"
@@ -340,7 +396,7 @@ def db_search_summaries(
             build_filter_conditions(conditions, params, project_name, branch_name, status)
             if conditions:
                 sql += " AND " + " AND ".join(conditions)
-            sql += " ORDER BY created_at DESC LIMIT ?"
+            sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ?"
             params.append(limit)
 
         cursor.execute(sql, params)
@@ -369,7 +425,7 @@ def db_list_recent_sessions(
         build_filter_conditions(conditions, params, project_name, branch_name)
         if conditions:
             sql += " AND " + " AND ".join(conditions)
-        sql += " ORDER BY created_at DESC LIMIT ?"
+        sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ?"
         params.append(limit)
         cursor.execute(sql, params)
         return [dict(row) for row in cursor.fetchall()]
@@ -425,7 +481,7 @@ def db_init_session(
         build_filter_conditions(conditions, params, project_name, branch_name)
         if conditions:
             sql += " AND " + " AND ".join(conditions)
-        sql += f" ORDER BY created_at DESC LIMIT {max_tasks}"
+        sql += f" ORDER BY updated_at DESC, created_at DESC LIMIT {max_tasks}"
         cursor.execute(sql, params)
         return [dict(row) for row in cursor.fetchall()]
 
@@ -446,7 +502,7 @@ def db_weekly_review(
         build_filter_conditions(conditions, params, project_name, branch_name)
         if conditions:
             sql += " AND " + " AND ".join(conditions)
-        sql += " ORDER BY created_at DESC"
+        sql += " ORDER BY updated_at DESC, created_at DESC"
         cursor.execute(sql, params)
         completed_tasks = [dict(row) for row in cursor.fetchall()]
 
@@ -487,9 +543,45 @@ def db_fts_search(
         build_filter_conditions(conditions, params, project_name, branch_name, status)
         if conditions:
             sql += " AND " + " AND ".join(conditions)
-        sql += " ORDER BY s.created_at DESC LIMIT ?"
+        sql += " ORDER BY s.updated_at DESC, s.created_at DESC LIMIT ?"
         params.append(limit)
         cursor.execute(sql, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def _save_history(cursor: sqlite3.Cursor, session_id: str, old_row: tuple) -> None:
+    """Archive current version to summary_history before update.
+    old_row is a tuple from session_summaries in column order: id(0), session_id(1), timestamp(2),
+    task_title(3), status(4), summary_content(5), next_steps(6), tags(7), module(8),
+    file_paths(9), project_name(10), branch_name(11), agent_source(12), created_at(13), updated_at(14).
+    """
+    cursor.execute(
+        'SELECT COALESCE(MAX(version), 0) + 1 FROM summary_history WHERE session_id = ?',
+        (session_id,),
+    )
+    next_ver = cursor.fetchone()[0]
+    cursor.execute(
+        '''INSERT INTO summary_history
+           (session_id, version, task_title, summary_content, status,
+            next_steps, tags, module, file_paths, project_name, branch_name,
+            agent_source, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (session_id, next_ver,
+         old_row[3], old_row[5], old_row[4],
+         old_row[6], old_row[7], old_row[8],
+         old_row[9], old_row[10], old_row[11],
+         old_row[12], old_row[13]),
+    )
+
+
+def get_summary_history(db_path: str, session_id: str) -> List[Dict[str, Any]]:
+    """Return archived versions for a session, newest first."""
+    with get_db_connection(db_path, row_factory=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM summary_history WHERE session_id = ? ORDER BY version DESC',
+            (session_id,),
+        )
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -499,13 +591,34 @@ def db_store_vector_metadata(
     vector_id: str,
     embedding_dim: int,
     created_at: str,
+    model_version: str = DEFAULT_MODEL_SNAPSHOT_HASH,
 ) -> None:
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT OR REPLACE INTO vector_metadata (session_id, vector_id, model_name, embedding_dim, created_at) VALUES (?, ?, ?, ?, ?)',
-            (session_id, vector_id, DEFAULT_MODEL_NAME, embedding_dim, created_at),
+            'INSERT OR REPLACE INTO vector_metadata (session_id, vector_id, model_name, model_version, embedding_dim, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            (session_id, vector_id, DEFAULT_MODEL_NAME, model_version, embedding_dim, created_at),
         )
+        conn.commit()
+
+
+def db_record_hit(db_path: str, session_id: str, hit_type: str, query_text: Optional[str] = None) -> None:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db_connection(db_path) as conn:
+        existing = conn.execute(
+            "SELECT id, hit_count FROM memory_hits WHERE session_id = ? AND hit_type = ? AND (query_text IS ? OR (? IS NULL AND query_text IS NULL))",
+            (session_id, hit_type, query_text, query_text),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE memory_hits SET hit_count = hit_count + 1, last_hit_at = ? WHERE id = ?",
+                (now, existing[0]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO memory_hits (session_id, hit_type, query_text, first_hit_at, last_hit_at) VALUES (?, ?, ?, ?, ?)",
+                (session_id, hit_type, query_text, now, now),
+            )
         conn.commit()
 
 
@@ -535,6 +648,6 @@ def db_vector_search_by_ids(
         build_filter_conditions(conditions, params, project_name, branch_name, status)
         if conditions:
             sql += " AND " + " AND ".join(conditions)
-        sql += " ORDER BY created_at DESC"
+        sql += " ORDER BY updated_at DESC, created_at DESC"
         cursor.execute(sql, params)
         return [dict(row) for row in cursor.fetchall()]

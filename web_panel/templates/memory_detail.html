@@ -117,18 +117,47 @@
           {% for key, item in quality.dimensions.items() %}
           <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;">
             <div style="display:flex;align-items:center;gap:6px;">
-              {% if item.ok %}
+              {% if key == 'cold_penalty' %}
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#c84c32" stroke-width="2.5"><path d="M12 8v4m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z"/></svg>
+              <span style="color:#c84c32;font-family:'JetBrains Mono',monospace;">{{ item.label }}</span>
+              {% elif item.ok %}
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#2a9d8f" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+              <span style="color:#6a6460;font-family:'JetBrains Mono',monospace;">{{ item.label }}</span>
               {% else %}
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d4d0cb" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"/></svg>
-              {% endif %}
               <span style="color:#6a6460;font-family:'JetBrains Mono',monospace;">{{ item.label }}</span>
+              {% endif %}
             </div>
-            <span style="color:#b0aaa6;font-family:'JetBrains Mono',monospace;font-size:10px;">{{ item.score }}/{{ item.max }}</span>
+            <span style="color:{{ '#c84c32' if key == 'cold_penalty' else '#b0aaa6' }};font-family:'JetBrains Mono',monospace;font-size:10px;">{% if key == 'cold_penalty' %}{{ item.score }}{% else %}{{ item.score }}/{{ item.max }}{% endif %}</span>
           </div>
           {% endfor %}
         </div>
         <div style="margin-top:12px;">{{ suggestion(quality.suggestion, quality.level) }}</div>
+      {% endcall %}
+
+      {% call card(_('detail_history_title')) %}
+        <div x-data="{ versions: [], loading: true }" x-init="fetch('/api/history/{{ summary.session_id }}').then(r=>r.json()).then(d=>{ versions=d.data; loading=false }).catch(()=>loading=false)">
+          <template x-if="loading">
+            <p style="text-align:center;font-size:10px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;">{{ _('detail_history_loading') }}</p>
+          </template>
+          <template x-if="!loading && versions.length === 0">
+            <p style="text-align:center;font-size:10px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;">{{ _('detail_history_none') }}</p>
+          </template>
+          <template x-if="!loading && versions.length > 0">
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <template x-for="v in versions" :key="v.version">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e8e4e0;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#1e1e1e;font-weight:600;">v<span x-text="v.version"></span></span>
+                    <span style="font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;" x-text="v.created_at"></span>
+                    <span style="font-size:9px;font-family:'JetBrains Mono',monospace;color:#6a6460;" x-text="v.status"></span>
+                  </div>
+                  <button @click="showDiff(v.version)" style="font-size:9px;font-family:'JetBrains Mono',monospace;color:#c84c32;background:none;border:none;cursor:pointer;padding:2px 6px;">{{ _('detail_history_diff') }}</button>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
       {% endcall %}
 
       {% call card(_('detail_vector_title')) %}
@@ -223,6 +252,13 @@ function memoryDetail() {
         if (!res.ok) throw new Error('{{ _("detail_submit_failed") }}');
         location.reload();
       } catch (e) { alert(e.message); }
+    },
+
+    async showDiff(version) {
+      const res = await fetch(`/api/history/{{ summary.session_id }}`);
+      const d = await res.json();
+      const v = d.data.find(x => x.version === version);
+      if (v) alert(`v${v.version} (${v.created_at})\n\n标题: ${v.task_title}\n状态: ${v.status}\n内容:\n${v.summary_content}`);
     },
 
     async updateMemory(sessionId) {

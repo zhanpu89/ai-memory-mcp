@@ -61,6 +61,63 @@
     {% endcall %}
   </div>
 
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;">
+    {% call card(_('dashboard_search_misses')) %}
+      {% if search_misses %}
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        {% for miss in search_misses %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #f0ebe6;">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+            <span style="width:4px;height:4px;background:#b0aaa6;flex-shrink:0;"></span>
+            <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6a6460;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ miss.query_text }}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#c84c32;">{{ miss.hit_count }}{{ _('hit_times') }}</span>
+          </div>
+        </div>
+        {% endfor %}
+        <div style="font-size:9px;color:#b0aaa6;margin-top:8px;font-family:'JetBrains Mono',monospace;">{{ _('dashboard_search_misses_hint') }}</div>
+      </div>
+      {% else %}{{ empty_state('dashboard_search_misses_none') }}{% endif %}
+    {% endcall %}
+
+    {% call card(_('dashboard_cold_memories')) %}
+      <div style="text-align:center;padding:24px 0;">
+        <div style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:#b0aaa6;line-height:1;">{{ cold_memories_count }}</div>
+        <div style="font-size:9px;font-family:'DM Sans',sans-serif;color:#9a9490;letter-spacing:0.08em;text-transform:uppercase;margin-top:4px;">{{ _('dashboard_cold_memories_count', count=cold_memories_count) }}</div>
+        {% if cold_memories_count > 0 %}
+        <a href="/cold-memories" class="btn btn-secondary btn-sm" style="margin-top:16px;">{{ _('dashboard_view') }}</a>
+        {% endif %}
+      </div>
+    {% endcall %}
+  </div>
+
+  {% call card(_('dashboard_agents'), 'anim-in d2') %}
+    <div x-data="{ agents: [], loading: true }" x-init="fetch('/api/agents').then(r=>r.json()).then(d=>{ agents=d.agents; loading=false }).catch(()=>loading=false)">
+      <template x-if="loading">
+        <p style="text-align:center;font-size:10px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;">{{ _('detail_history_loading') }}</p>
+      </template>
+      <template x-if="!loading && agents.length === 0">
+        <p style="text-align:center;font-size:10px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;">{{ _('dashboard_agents_none') }}</p>
+      </template>
+      <template x-if="!loading && agents.length > 0">
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <template x-for="a in agents" :key="a.agent_source">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e8e4e0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#1e1e1e;font-weight:500;" x-text="a.agent_source"></span>
+                <span style="font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;" x-text="a.memory_count + ' records'"></span>
+              </div>
+              <span style="font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:600;"
+                    :style="'color:' + (a.avg_quality >= 65 ? '#2a9d8f' : a.avg_quality >= 50 ? '#d4a843' : '#c84c32')"
+                    x-text="a.avg_quality + '%'"></span>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  {% endcall %}
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
     {% call card(_('dashboard_top_memories')) %}
       {% if top_memories %}
@@ -79,18 +136,20 @@
       {% else %}{{ empty_state('dashboard_no_hits') }}{% endif %}
     {% endcall %}
 
-    {% call card(_('dashboard_hit_trend')) %}
-      {% if hits_over_time %}
-      {% set max_hits = hits_over_time|map(attribute='count')|max %}
-      <div style="display:flex;align-items:flex-end;gap:3px;height:140px;padding-top:8px;">
-        {% for h in hits_over_time %}
-        {% set pct = (h.count / max_hits * 100)|round if max_hits > 0 else 0 %}
+    {% call card(_('dashboard_quality_trend')) %}
+      {% if quality_trend %}
+      {% set max_q = quality_trend|map(attribute='avg')|max %}
+      {% set min_q = quality_trend|map(attribute='avg')|min %}
+      <div style="display:flex;align-items:flex-end;gap:4px;height:140px;padding-top:8px;">
+        {% for w in quality_trend %}
+        {% set range = max_q - min_q if max_q > min_q else 1 %}
+        {% set pct = ((w.avg - min_q) / range * 90 + 10)|round if w.count > 0 else 0 %}
         <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;"
              onmouseover="this.querySelector('.bar-tip').style.opacity='1'" onmouseout="this.querySelector('.bar-tip').style.opacity='0'">
-          <div class="bar-tip" style="position:absolute;top:-18px;font-size:9px;font-family:'JetBrains Mono',monospace;color:#c84c32;opacity:0;transition:opacity 0.15s;white-space:nowrap;">{{ h.count }}</div>
-          <div style="width:100%;min-height:2px;background:#c84c32;transition:opacity 0.2s;opacity:0.7;{% if pct < 2 %}height:2px;opacity:0.3{% endif %}"
+          <div class="bar-tip" style="position:absolute;top:-18px;font-size:9px;font-family:'JetBrains Mono',monospace;color:#c84c32;opacity:0;transition:opacity 0.15s;white-space:nowrap;">{{ w.avg }}%</div>
+          <div style="width:100%;min-height:2px;background:{% if w.avg >= 65 %}#2a9d8f{% elif w.avg >= 50 %}#d4a843{% else %}#c84c32{% endif %};transition:opacity 0.2s;opacity:0.7;border-radius:1px;{% if pct < 2 %}height:2px;opacity:0.3{% endif %}"
                onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'"></div>
-          <span style="font-size:7px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;">{{ h.day[-5:] }}</span>
+          <span style="font-size:7px;font-family:'JetBrains Mono',monospace;color:#b0aaa6;">{{ w.week }}</span>
         </div>
         {% endfor %}
       </div>

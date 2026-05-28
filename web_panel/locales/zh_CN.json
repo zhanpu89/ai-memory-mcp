@@ -107,6 +107,9 @@
   "search_no_results_hint": "尝试更换关键词或切换搜索模式",
   "search_initial": "输入关键词开始检索",
   "search_initial_hint": "全文搜索支持精确匹配，模糊搜索支持部分匹配",
+  "search_auto_tags": "自动识别标签",
+  "search_miss_suggestions": "其他用户搜索过但未命中的查询",
+  "search_miss_suggestions_hint": "以下查询也遇到了相同情况，尝试点击查看是否适合你的场景：",
 
   "hit_type_fts": "全文搜索",
   "hit_type_vector": "向量搜索",
@@ -126,5 +129,54 @@
   "dec_type_refactor": "重构",
   "dec_type_performance": "性能",
   "dec_type_security": "安全",
-  "dec_type_trade_off": "权衡"
+  "dec_type_trade_off": "权衡",
+
+  "quality_hit_frequency": "命中频率",
+  "quality_cold_penalty": "冷记忆降级",
+  "quality_needs_improvement": "待优化",
+  "quality_all": "全部质量",
+
+  "memories_filter_quality": "质量",
+  "memories_all_quality": "全部",
+  "memories_quality_needs_improvement": "待优化 (< 50分)",
+
+  "bulk_select_all": "全选本页",
+  "bulk_select_all_results": "全选所有匹配",
+  "bulk_selected": "已选 {count} 项",
+  "bulk_action": "批量操作",
+  "bulk_status": "批量修改状态",
+  "bulk_tags": "批量添加标签",
+  "bulk_delete": "批量删除",
+  "bulk_delete_confirm": "确定删除选中的 {count} 条记忆？",
+  "bulk_apply": "执行",
+  "bulk_cancel": "取消",
+
+  "dashboard_search_misses": "未命中查询",
+  "dashboard_search_misses_none": "暂无未命中查询",
+  "dashboard_search_misses_count": "{count} 条",
+  "dashboard_cold_memories": "冷记忆",
+  "dashboard_cold_memories_count": "{count} 条超过 90 天未访问",
+  "dashboard_search_misses_hint": "检索未命中的查询关键词，供补充知识用",
+  "dashboard_agents": "代理分析",
+  "dashboard_agents_none": "暂无代理数据",
+  "dashboard_clear": "清除",
+
+  "detail_quality_dimension": "质量维度",
+  "detail_cold_penalty_note": "此记忆超过 90 天未访问，已被冷降级",
+
+  "cold_title": "冷记忆",
+  "cold_subtitle": "共 {count} 条超过 90 天未更新的已完成记忆",
+  "cold_total": "{count} 条冷记忆",
+  "cold_hits": "{count} 次命中",
+  "cold_empty": "暂无冷记忆",
+  "cold_empty_hint": "所有记忆都在被积极维护和访问",
+
+  "dashboard_view": "查看",
+
+  "detail_history_title": "版本历史",
+  "detail_history_none": "暂无历史版本",
+  "detail_history_loading": "加载中…",
+  "detail_history_diff": "对比",
+
+  "dashboard_quality_trend": "质量趋势"
 }

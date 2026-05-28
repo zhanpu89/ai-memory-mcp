@@ -107,6 +107,9 @@
   "search_no_results_hint": "Try different keywords or switch search mode",
   "search_initial": "Enter a query to begin",
   "search_initial_hint": "FTS supports exact matching · LIKE supports partial matches",
+  "search_auto_tags": "AUTO TAGS",
+  "search_miss_suggestions": "SIMILAR SEARCHES (ALL MISSED)",
+  "search_miss_suggestions_hint": "These similar queries also returned zero results. You may find something useful by clicking one:",
 
   "hit_type_fts": "FTS SEARCH",
   "hit_type_vector": "VECTOR SEARCH",
@@ -126,5 +129,54 @@
   "dec_type_refactor": "REFACTOR",
   "dec_type_performance": "PERF",
   "dec_type_security": "SECURE",
-  "dec_type_trade_off": "TRADE"
+  "dec_type_trade_off": "TRADE",
+
+  "quality_hit_frequency": "HIT FREQ",
+  "quality_cold_penalty": "COLD PENALTY",
+  "quality_needs_improvement": "NEEDS IMPROVEMENT",
+  "quality_all": "ALL QUALITY",
+
+  "memories_filter_quality": "Quality",
+  "memories_all_quality": "All",
+  "memories_quality_needs_improvement": "Needs Improvement (< 50%)",
+
+  "bulk_select_all": "SELECT PAGE",
+  "bulk_select_all_results": "SELECT ALL MATCHED",
+  "bulk_selected": "{count} SELECTED",
+  "bulk_action": "BULK ACTION",
+  "bulk_status": "BULK UPDATE STATUS",
+  "bulk_tags": "BULK ADD TAGS",
+  "bulk_delete": "BULK DELETE",
+  "bulk_delete_confirm": "Delete {count} selected memories?",
+  "bulk_apply": "APPLY",
+  "bulk_cancel": "CANCEL",
+
+  "dashboard_search_misses": "SEARCH MISSES",
+  "dashboard_search_misses_none": "No missed queries",
+  "dashboard_search_misses_count": "{count} QUERIES",
+  "dashboard_cold_memories": "COLD MEMORIES",
+  "dashboard_cold_memories_count": "{count} unaccessed for 90+ days",
+  "dashboard_search_misses_hint": "Queries that returned no results; use these to guide memory enrichment",
+  "dashboard_agents": "AGENTS",
+  "dashboard_agents_none": "No agent data",
+  "dashboard_clear": "CLEAR",
+
+  "detail_quality_dimension": "QUALITY DIMENSION",
+  "detail_cold_penalty_note": "This memory has been cold-penalized (>90 days without access)",
+
+  "cold_title": "Cold Memories",
+  "cold_subtitle": "{count} memories with no activity for 90+ days",
+  "cold_total": "{count} COLD",
+  "cold_hits": "{count} hits",
+  "cold_empty": "No cold memories found",
+  "cold_empty_hint": "All memories are actively maintained and accessed",
+
+  "dashboard_view": "VIEW",
+
+  "detail_history_title": "VERSION HISTORY",
+  "detail_history_none": "No version history",
+  "detail_history_loading": "Loading…",
+  "detail_history_diff": "DIFF",
+
+  "dashboard_quality_trend": "QUALITY TREND"
 }

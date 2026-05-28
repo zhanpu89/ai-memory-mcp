@@ -1,6 +1,7 @@
 """AI Memory MCP Server — tool registration layer."""
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict
@@ -17,6 +18,7 @@ from .database import (
     db_init_session,
     db_list_recent_sessions,
     db_maintenance,
+    db_record_hit,
     db_save_summary,
     db_search_summaries,
     db_store_vector_metadata,
@@ -48,7 +50,7 @@ from .models import (
     UpdateSummaryInput,
     WeeklyReviewInput,
 )
-from .vector_store import VECTOR_SUPPORT, VectorStore
+from .vector_store import VectorStore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -96,9 +98,63 @@ class AiMemoryMcpServer(FastMCP):
         init_db(self.db_path)
 
         self._vector = VectorStore(self.db_path, self.model_cache_dir)
+        self._last_context: Dict[str, str] = {}
 
         self._register_tools()
         self._register_prompts()
+
+    # ── auto enrichment ────────────────────────────────────────────────────
+
+    def _auto_enrich(self, params: SaveSummaryInput) -> SaveSummaryInput:
+        """Auto-detect missing fields from summary content when AI doesn't provide them."""
+        content = params.summary_content or ""
+        title = params.task_title or ""
+        combined = f"{title}\n{content}"
+
+        # Detect file paths (pattern: path/to/file.ext)
+        if not params.file_paths:
+            paths = re.findall(r'(?:^|\s)((?:src|app|lib|tests|config|scripts|web)/[\w./-]+\.\w+)', combined)
+            if paths:
+                params.file_paths = ",".join(sorted(set(paths)))
+
+        # Detect module from file paths or directory structure
+        if not params.module and params.file_paths:
+            dirs = set()
+            for p in params.file_paths.split(","):
+                parts = p.strip().split("/")
+                if len(parts) >= 2:
+                    dirs.add(parts[0])
+            if dirs:
+                params.module = ",".join(sorted(dirs))
+
+        # Auto-extract tags from content patterns
+        if not params.tags:
+            tags = set()
+            # Common tech keywords
+            tech_keywords = [
+                (r'\b(api|endpoint|route)\b', 'api'),
+                (r'\b(auth|login|jwt|token|oauth|session)\b', 'auth'),
+                (r'\b(db|sql|database|schema|migration|query)\b', 'database'),
+                (r'\b(test|unittest|pytest|assert|mock)\b', 'test'),
+                (r'\b(docker|container|image|compose)\b', 'docker'),
+                (r'\b(config|env|environment|setting)\b', 'config'),
+                (r'\b(deploy|ci|cd|pipeline|release)\b', 'deploy'),
+                (r'\b(fix|bug|error|exception|hotfix|patch)\b', 'bugfix'),
+                (r'\b(refactor|clean|extract|rename|move)\b', 'refactor'),
+                (r'\b(perf|performance|optimize|slow|latency)\b', 'performance'),
+                (r'\b(doc|docs|readme|comment|documentation)\b', 'docs'),
+                (r'\b(ui|ux|frontend|component|page|view)\b', 'frontend'),
+                (r'\b(backend|server|service|middleware)\b', 'backend'),
+                (r'\b(python|py)\b', 'python'),
+                (r'\b(node|npm|yarn|js|ts|typescript)\b', 'javascript'),
+            ]
+            for pattern, tag in tech_keywords:
+                if re.search(pattern, combined, re.IGNORECASE):
+                    tags.add(tag)
+            if tags:
+                params.tags = ",".join(sorted(tags))
+
+        return params
 
     # ── write tools ───────────────────────────────────────────────────────────
 
@@ -136,6 +192,7 @@ class AiMemoryMcpServer(FastMCP):
         Returns:
             Dict: {"success": bool, "message": str, "quality_warnings"?: List[str]}
         """
+        params = self._auto_enrich(params)
         quality_warnings = []
         if not params.file_paths:
             quality_warnings.append("缺少 file_paths（涉及文件路径），日后将无法按文件检索到此记录")
@@ -149,6 +206,7 @@ class AiMemoryMcpServer(FastMCP):
         if not params.project_name:
             quality_warnings.append("缺少 project_name（项目名称），跨项目检索时无法过滤")
 
+        agent_source = params.agent_source or os.environ.get("AI_MEMORY_AGENT_SOURCE") or "unknown"
         resp, created_at = db_save_summary(
             self.db_path,
             session_id=params.session_id,
@@ -161,6 +219,7 @@ class AiMemoryMcpServer(FastMCP):
             file_paths=params.file_paths,
             project_name=params.project_name,
             branch_name=params.branch_name,
+            agent_source=agent_source,
         )
         if resp.get("success"):
             if quality_warnings:
@@ -293,12 +352,22 @@ class AiMemoryMcpServer(FastMCP):
         Returns:
             Dict: {"success": bool, "data": List[Dict]}
         """
+        if not params.project_name and "project_name" in self._last_context:
+            params.project_name = self._last_context["project_name"]
+        if not params.branch_name and "branch_name" in self._last_context:
+            params.branch_name = self._last_context["branch_name"]
         status = params.status.value if params.status else None
         try:
+            query_text = params.query or ""
+
             if params.use_vector and params.query and self._vector.available:
-                return self._vector_search(
+                result = self._vector_search(
                     params.query, params.project_name, params.branch_name, status, params.limit
                 )
+                if result.get("success") and result.get("data"):
+                    for item in result["data"]:
+                        db_record_hit(self.db_path, item["session_id"], "mcp_search", query_text)
+                return result
 
             results = db_search_summaries(
                 self.db_path,
@@ -312,8 +381,13 @@ class AiMemoryMcpServer(FastMCP):
                 limit=params.limit,
             )
 
+            if results:
+                for item in results:
+                    db_record_hit(self.db_path, item["session_id"], "mcp_search", query_text)
+                return success_response(data=results)
+
             # Auto fallback: FTS5 无结果 → 自动降级
-            if not results and params.query and params.use_fts:
+            if params.query and params.use_fts:
                 # 1) 优先向量语义检索
                 if self._vector.available:
                     logger.info(f"FTS5 未找到结果，自动降级到向量检索: {params.query}")
@@ -322,6 +396,8 @@ class AiMemoryMcpServer(FastMCP):
                     )
                     if vec_result.get("success") and vec_result.get("data"):
                         vec_result["message"] = "FTS5 未命中，已自动降级到语义检索（向量）"
+                        for item in vec_result["data"]:
+                            db_record_hit(self.db_path, item["session_id"], "mcp_search", query_text)
                         return vec_result
 
                 # 2) 最后兜底：LIKE 模糊匹配（对中文友好，兼容 FTS5 不支持中文分词的问题）
@@ -338,6 +414,8 @@ class AiMemoryMcpServer(FastMCP):
                     limit=params.limit,
                 )
                 if like_results:
+                    for item in like_results:
+                        db_record_hit(self.db_path, item["session_id"], "mcp_search", query_text)
                     return success_response(
                         data=like_results,
                         message="FTS5 未命中，已自动降级到模糊匹配",
@@ -378,6 +456,9 @@ class AiMemoryMcpServer(FastMCP):
                 status=params.status.value if params.status else None,
                 limit=params.limit,
             )
+            if results:
+                for item in results:
+                    db_record_hit(self.db_path, item["session_id"], "mcp_search_fts", params.query)
             return success_response(data=results)
         except Exception as e:
             logger.error(f"FTS5全文检索失败: {e}")
@@ -400,6 +481,7 @@ class AiMemoryMcpServer(FastMCP):
         try:
             row = db_get_summary_by_id(self.db_path, params.session_id)
             if row:
+                db_record_hit(self.db_path, params.session_id, "mcp_read")
                 return success_response(data=row)
             return error_response(f"未找到 session_id '{params.session_id}' 对应的摘要")
         except Exception as e:
@@ -460,6 +542,10 @@ class AiMemoryMcpServer(FastMCP):
         Returns:
             Dict: {"success": bool, "data": List[Dict], "prompt": str}
         """
+        if params.project_name:
+            self._last_context["project_name"] = params.project_name
+        if params.branch_name:
+            self._last_context["branch_name"] = params.branch_name
         try:
             three_days_ago = (
                 datetime.now() - timedelta(days=INIT_SESSION_DAYS_BACK)

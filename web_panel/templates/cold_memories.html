@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_macros.html" import card, status_badge, quality_circle, pagination, empty_state %}
+{% block title %}{{ _('site_title') }} · {{ _('cold_title') }}{% endblock %}
+{% block content %}
+
+<div x-data="memoryManager()">
+  <div class="anim-in" style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:28px;">
+    <div>
+      <h1 style="font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:#1e1e1e;letter-spacing:-0.02em;margin:0;">{{ _('cold_title') }}</h1>
+      <p style="font-size:13px;color:#9a9490;margin:6px 0 0;">{{ _('cold_subtitle', count=total) }}</p>
+    </div>
+    <div style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.05em;">{{ _('cold_total', count=total) }}</div>
+  </div>
+
+  <div class="filters-bar anim-in d1" style="margin-bottom:24px;">
+    <form method="GET" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;">
+      <div style="flex:1;min-width:200px;">
+        <label style="display:block;font-size:9px;font-family:'JetBrains Mono',monospace;color:#9a9490;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">{{ _('memories_filter_search') }}</label>
+        <input type="text" name="q" value="{{ q }}" placeholder="{{ _('memories_search_placeholder') }}" class="input" />
+      </div>
+      <button type="submit" class="btn btn-secondary" style="height:34px;">{{ _('memories_filter_btn') }}</button>
+      {% if q %}
+      <a href="/cold-memories" class="btn btn-ghost" style="height:34px;">{{ _('memories_reset_btn') }}</a>
+      {% endif %}
+    </form>
+  </div>
+
+  {% if summaries %}
+  <div class="mem-list anim-in d2">
+    {% for s in summaries %}
+    <div class="mem-row" style="display:flex;align-items:center;gap:16px;padding:14px 18px;border-bottom:1px solid #e8e4e0;">
+      <div style="flex:0 0 44px;">{{ quality_circle(s._quality.percentage, 'sm') }}</div>
+      <div style="flex:1;min-width:0;">
+        <a href="/memories/{{ s.session_id }}" style="font-size:14px;font-weight:500;color:#1e1e1e;text-decoration:none;">{{ s.task_title }}</a>
+        <div style="display:flex;gap:12px;margin-top:4px;font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;">
+          {% if s.project_name %}<span>{{ s.project_name }}</span>{% endif %}
+          {{ status_badge(s.status) }}
+        </div>
+      </div>
+      <div style="flex:0 0 auto;text-align:right;font-size:10px;font-family:'JetBrains Mono',monospace;color:#9a9490;line-height:1.6;">
+        <div>{{ _('cold_hits', count=s._hit_count) }}</div>
+        <div>{{ s._days_since }}d</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="anim-in d3" style="margin-top:24px;">
+    {{ pagination(page, total_pages, 'cold-memories', q=q) }}
+  </div>
+  {% else %}
+  {{ empty_state(_('cold_empty'), _('cold_empty_hint')) }}
+  {% endif %}
+</div>
+
+<script>
+function memoryManager() {
+  return {
+    selected: new Set(),
+    selectAll: false,
+    selectAllMatched: false,
+    bulkAction: '',
+    bulkValue: '',
+    showBulkModal: false,
+    toggleAll() { /* no-op for cold page */ },
+    toggleAllMatched() { /* no-op */ },
+    openBulk(action) { /* no-op */ },
+    applyBulk() { /* no-op */ },
+  }
+}
+</script>
+{% endblock %}

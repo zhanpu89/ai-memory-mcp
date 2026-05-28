@@ -19,6 +19,7 @@ ENV_VAR_HOST = "AI_MEMORY_HOST"
 ENV_VAR_PORT = "AI_MEMORY_PORT"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
+ENV_VAR_AGENT_SOURCE = "AI_MEMORY_AGENT_SOURCE"
 
 VECTOR_COLLECTION_NAME = "session_summaries"
 VECTOR_METRIC_SPACE = "cosine"
@@ -60,6 +61,7 @@ class SaveSummaryInput(BaseModel):
     file_paths: Optional[str] = Field(default=None, description="涉及文件路径，逗号分隔")
     project_name: Optional[str] = Field(default=None, description="项目名称")
     branch_name: Optional[str] = Field(default=None, description="分支名称")
+    agent_source: Optional[str] = Field(default=None, description="代理来源标识（自动从 AI_MEMORY_AGENT_SOURCE 环境变量读取）")
 
 
 class UpdateSummaryInput(BaseModel):

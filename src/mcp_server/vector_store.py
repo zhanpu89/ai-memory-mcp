@@ -16,17 +16,6 @@ from .models import (
 
 logger = logging.getLogger('ai_memory_mcp')
 
-try:
-    import chromadb
-    from chromadb.config import Settings
-    from sentence_transformers import SentenceTransformer
-    VECTOR_SUPPORT = True
-    logger.info("向量库导入成功")
-except Exception as _e:
-    logger.warning(f"向量库导入失败: {_e}")
-    VECTOR_SUPPORT = False
-
-
 class VectorStore:
     """Manages ChromaDB collection and SentenceTransformer embedding model."""
 
@@ -37,17 +26,17 @@ class VectorStore:
         self._model: Optional[Any] = None
         self._client = None
 
-        if not VECTOR_SUPPORT:
-            logger.info("向量支持已禁用")
-            return
-
         self._init(db_path, model_cache_dir)
 
     # ── public interface ──────────────────────────────────────────────────────
 
     @property
     def available(self) -> bool:
-        return VECTOR_SUPPORT and self._collection is not None and self._model is not None
+        return self._collection is not None and self._model is not None
+
+    @property
+    def model_version(self) -> str:
+        return DEFAULT_MODEL_SNAPSHOT_HASH
 
     def generate_and_store(
         self,
@@ -79,6 +68,7 @@ class VectorStore:
                 vector_id=vector_id,
                 embedding_dim=len(embedding),
                 created_at=created_at,
+                model_version=self.model_version,
             )
             logger.info(f"成功为会话 {session_id} 生成并存储 Embedding")
         except Exception as e:
@@ -119,31 +109,41 @@ class VectorStore:
             logger.info("向量初始化已被 AI_MEMORY_DISABLE_VECTOR 禁用")
             return
         try:
+            from chromadb import PersistentClient
+            from sentence_transformers import SentenceTransformer
+        except Exception as e:
+            logger.warning(f"向量库依赖未安装或导入失败: {e}")
+            return
+
+        try:
             vector_db_path = os.path.join(os.path.dirname(os.path.abspath(db_path)), VECTOR_DB_DIR_NAME)
             os.makedirs(vector_db_path, exist_ok=True)
 
-            from chromadb import PersistentClient
             self._client = PersistentClient(path=vector_db_path)
             self._collection = self._client.get_or_create_collection(
                 name=VECTOR_COLLECTION_NAME,
                 metadata={"hnsw:space": VECTOR_METRIC_SPACE},
             )
 
-            local_model_path = os.path.join(
-                model_cache_dir,
-                "models--sentence-transformers--all-MiniLM-L6-v2",
-                "snapshots",
-                DEFAULT_MODEL_SNAPSHOT_HASH,
-            )
-            if self._is_model_valid(local_model_path):
-                logger.info(f"加载本地模型: {local_model_path}")
-                self._model = SentenceTransformer(local_model_path)
+            model_candidates = self._resolve_model_paths(model_cache_dir)
+            for candidate in model_candidates:
+                if self._is_model_valid(candidate):
+                    logger.info(f"加载本地模型: {candidate}")
+                    self._model = SentenceTransformer(candidate)
+                    break
+                if self._is_path_writable(candidate):
+                    logger.info(f"本地模型缺失，从镜像下载到: {candidate}")
+                    if self._download_model(DEFAULT_MODEL_NAME, candidate):
+                        self._model = SentenceTransformer(candidate)
+                        break
+                    logger.warning(f"模型下载失败，尝试下一个路径: {candidate}")
             else:
-                logger.info(f"本地模型缺失，从镜像下载: {DEFAULT_MODEL_NAME}")
-                if self._download_model(DEFAULT_MODEL_NAME, local_model_path):
-                    self._model = SentenceTransformer(local_model_path)
-                else:
-                    raise FileNotFoundError("模型下载失败，请检查网络或手动运行 scripts/download_model.py")
+                logger.error(
+                    "所有模型路径均无法使用。请预下载模型或确保 AI_MEMORY_MODEL_PATH 指向可写目录"
+                )
+                self._collection = None
+                self._client = None
+                return
 
             logger.info("向量存储初始化成功")
         except Exception as e:
@@ -151,6 +151,19 @@ class VectorStore:
             self._collection = None
             self._model = None
             self._client = None
+
+    def _resolve_model_paths(self, model_cache_dir: str) -> List[str]:
+        relative = os.path.join(
+            "models--sentence-transformers--all-MiniLM-L6-v2",
+            "snapshots",
+            DEFAULT_MODEL_SNAPSHOT_HASH,
+        )
+        paths = [os.path.join(model_cache_dir, relative)]
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(self.db_path)), "models")
+        fallback = os.path.join(data_dir, relative)
+        if fallback != paths[0]:
+            paths.append(fallback)
+        return paths
 
     @staticmethod
     def _is_model_valid(local_model_path: str) -> bool:
@@ -160,6 +173,19 @@ class VectorStore:
             and os.path.exists(safetensors)
             and os.path.getsize(safetensors) > MIN_MODEL_FILE_SIZE_BYTES
         )
+
+    @staticmethod
+    def _is_path_writable(path: str) -> bool:
+        parent = os.path.dirname(path)
+        try:
+            os.makedirs(parent, exist_ok=True)
+            test_file = os.path.join(parent, ".ai_memory_write_test")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            return True
+        except (OSError, PermissionError):
+            return False
 
     @staticmethod
     def _download_model(model_name: str, local_model_path: str) -> bool:

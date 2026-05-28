@@ -49,6 +49,64 @@ class TestAiMemoryMcpServer:
         assert result["success"] is False
         assert "test-session-1" in result["message"] or "已存在" in result["message"]
 
+    def test_save_summary_auto_enrich(self, server):
+        """自动标签/路径提取：应从内容中检测 file_paths, tags, module"""
+        result = _save(server, "test-auto-enrich-1", "修复登录 API 的认证 Bug",
+                       "修复了 src/api/auth/login.py 中的 JWT token 验证错误\n"
+                       "在 tests/test_auth.py 中添加了测试用例\n"
+                       "使用了 Python 的 unittest 框架",
+                       status="completed")
+        assert result["success"] is True
+
+        saved = server.get_summary_by_id(GetSummaryByIdInput(session_id="test-auto-enrich-1"))
+        assert saved["success"] is True
+        data = saved["data"]
+
+        assert data["file_paths"] is not None
+        assert "src/api/auth/login.py" in data["file_paths"]
+        assert "tests/test_auth.py" in data["file_paths"]
+
+        assert data["tags"] is not None
+        assert "api" in data["tags"]
+        assert "auth" in data["tags"]
+        assert "bugfix" in data["tags"]
+        assert "test" in data["tags"]
+
+        assert data["module"] is not None
+        assert "src" in data["module"] or "tests" in data["module"]
+
+    def test_save_summary_auto_enrich_does_not_overwrite(self, server):
+        """自动提取不覆盖 AI 已提供的字段"""
+        result = _save(server, "test-auto-enrich-2", "手动指定标签",
+                       "这段内容提到 src/api/route.py 和 auth token",
+                       status="completed",
+                       tags="manual-tag,explicit",
+                       file_paths="custom/path.py")
+        assert result["success"] is True
+
+        saved = server.get_summary_by_id(GetSummaryByIdInput(session_id="test-auto-enrich-2"))
+        assert saved["success"] is True
+        data = saved["data"]
+
+        assert data["tags"] == "manual-tag,explicit"
+        assert data["file_paths"] == "custom/path.py"
+
+    def test_search_summaries_context_injection(self, server):
+        """搜索时自动注入 init_session 的项目/分支上下文"""
+        _save(server, "test-ctx-search-1", "项目任务", "实现了数据库 CRUD",
+              status="completed", project_name="ai-memory", branch_name="main",
+              tags="test", file_paths="test.py")
+        _save(server, "test-ctx-search-2", "其他任务", "另一个任务",
+              status="completed", project_name="other-project", branch_name="main",
+              tags="test", file_paths="test.py")
+
+        server._last_context = {"project_name": "ai-memory", "branch_name": "main"}
+
+        result = server.search_summaries(SearchSummariesInput(query="CRUD"))
+        assert result["success"] is True
+        assert len(result["data"]) == 1
+        assert result["data"][0]["session_id"] == "test-ctx-search-1"
+
     def test_save_summary_with_project_info(self, server):
         """测试保存带项目信息的摘要功能"""
         result = _save(server, "test-session-project", "测试任务", "这是测试摘要内容",
